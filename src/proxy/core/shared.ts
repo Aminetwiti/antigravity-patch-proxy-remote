@@ -463,7 +463,7 @@ export function flattenAllToolCallsToText(contents: unknown[]): boolean {
 export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
   if (!Array.isArray(contents) || contents.length < 3) return false;
 
-  const recentCalls: Array<{ name: string; argsStr: string }> = [];
+  const recentCalls: Array<{ name: string; argsStr: string; filePath?: string }> = [];
 
   for (let i = contents.length - 1; i >= 0; i--) {
     const turn = contents[i] as { role?: string; parts?: unknown[] };
@@ -476,11 +476,24 @@ export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
       if (fc && typeof fc === 'object') {
         const name = String(fc.name || '');
         const argsStr = fc.args ? (typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args)) : '{}';
-        recentCalls.push({ name, argsStr });
+        let filePath: string | undefined;
+        let parsedArgs: any = fc.args;
+        if (typeof parsedArgs === 'string') {
+          try {
+            parsedArgs = JSON.parse(parsedArgs);
+          } catch (_) {
+            parsedArgs = undefined;
+          }
+        }
+        if (parsedArgs && typeof parsedArgs === 'object') {
+          const rawPath = parsedArgs.Path || parsedArgs.path || parsedArgs.filePath || parsedArgs.filepath;
+          if (typeof rawPath === 'string') filePath = rawPath.toLowerCase().replace(/\\/g, '/');
+        }
+        recentCalls.push({ name, argsStr, filePath });
       }
     }
-    // Only inspect the tail of recent activity (last ~6 tool calls)
-    if (recentCalls.length >= 6) break;
+    // Inspect the tail of recent activity (last ~12 tool calls)
+    if (recentCalls.length >= 12) break;
   }
 
   if (recentCalls.length < 3) return false;
@@ -495,11 +508,19 @@ export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
     }
   }
 
-  // Threshold: 3+ identical consecutive tool invocations
-  if (consecutiveCount >= 3) {
+  // Also detect non-consecutive but frequent repetitive inspections of the same file
+  const sameFileCount = first.filePath
+    ? recentCalls.filter((c) => c.filePath === first.filePath).length
+    : 0;
+
+  // Threshold: 3+ identical consecutive tool invocations OR 4+ reads of the same file in recent calls
+  if (consecutiveCount >= 3 || sameFileCount >= 4) {
     const lastTurn = contents[contents.length - 1] as { role?: string; parts?: unknown[] };
     if (Array.isArray(lastTurn?.parts) && lastTurn.parts.length > 0) {
-      const antiLoopNote = `\n[System Guardrail: Redundant tool execution detected for '${first.name}'. Output is already present in context above. Synthesize findings and proceed to the next step immediately.]`;
+      const detail = sameFileCount >= 4
+        ? `Redundant tool execution detected for '${first.name}'. File '${first.filePath}' has already been inspected multiple times`
+        : `Redundant tool execution detected for '${first.name}'. Output is already present in context above`;
+      const antiLoopNote = `\n[System Guardrail: ${detail}. Synthesize findings and proceed to the next step immediately.]`;
       const lastPart = lastTurn.parts[lastTurn.parts.length - 1] as Record<string, unknown>;
       const fr = (lastPart.functionResponse || lastPart.function_response) as Record<string, unknown> | undefined;
       if (fr && typeof fr === 'object') {

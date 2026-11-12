@@ -874,6 +874,50 @@ describe('Burst Rate Limit Governor & Constants', () => {
       expect(lastOutput).toContain('[System Guardrail: Redundant tool execution detected');
     });
 
+    it('detectAndMitigateToolLoops intercepts 4 non-consecutive reads of the same file', () => {
+      const contents = [
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/dashboard.dart', StartLine: 1, EndLine: 50 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: 'lines 1-50' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'run_command', args: { CommandLine: 'git grep timer' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'run_command', response: { output: 'timer found' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/dashboard.dart', StartLine: 50, EndLine: 100 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: 'lines 50-100' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/dashboard.dart', StartLine: 100, EndLine: 150 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: 'lines 100-150' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/dashboard.dart', StartLine: 150, EndLine: 200 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: 'lines 150-200' } } }] },
+      ];
+
+      const injected = detectAndMitigateToolLoops(contents);
+      expect(injected).toBe(true);
+      const lastTurn = contents[contents.length - 1] as any;
+      const lastOutput = lastTurn.parts[0].functionResponse.response.output;
+      expect(lastOutput).toContain('[System Guardrail: Redundant tool execution detected');
+      expect(lastOutput).toContain('dashboard.dart');
+    });
+
+    it('detectAndMitigateToolLoops correctly handles stringified JSON arguments in functionCall', () => {
+      const contents = [
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: JSON.stringify({ Path: 'C:/app/dashboard.dart' }) } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '1' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'run_command', args: { CommandLine: 'git status' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'run_command', response: { output: 'clean' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: JSON.stringify({ Path: 'C:/app/dashboard.dart' }) } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '2' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: JSON.stringify({ Path: 'C:/app/dashboard.dart' }) } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '3' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: JSON.stringify({ Path: 'C:/app/dashboard.dart' }) } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '4' } } }] },
+      ];
+
+      const injected = detectAndMitigateToolLoops(contents);
+      expect(injected).toBe(true);
+      const lastTurn = contents[contents.length - 1] as any;
+      const lastOutput = lastTurn.parts[0].functionResponse.response.output;
+      expect(lastOutput).toContain('[System Guardrail: Redundant tool execution detected');
+      expect(lastOutput).toContain('dashboard.dart');
+    });
+
     it('correctly identifies trial accounts and filters them out for Argon and Claude 5.5 in selectCandidateP2C', () => {
       const trialAcc = makeModel({
         accountEmail: 'student-trial@example.com',

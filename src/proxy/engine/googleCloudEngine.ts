@@ -821,18 +821,21 @@ export async function executeGoogleCloudCodeWithPool(
     delete (reqJson as any).systemInstruction;
   }
 
-  // Optimize prompt payload by removing redundant duplicate file injections
-  reqJson = trimContextPayload(reqJson as unknown as GeminiRequestBody) as unknown as Record<string, unknown>;
+  // Parity with Original Antigravity: Google Cloud Code PA supports up to 1M tokens natively.
+  // Proactive history slicing at 35 turns causes catastrophic amnesia and infinite tool-execution loops.
+  // Full context is preserved by default. Trimming is strictly opt-in via environment variables or reactive fallbacks.
+  if (process.env.AG_ENABLE_CONTEXT_TRIMMER === '1') {
+    reqJson = trimContextPayload(reqJson as unknown as GeminiRequestBody) as unknown as Record<string, unknown>;
+  }
 
-  // Proactive History Trimming: If session has accumulated heavy history (>50 turns),
-  // proactively trim historical turns before the first network dispatch to prevent 35s-60s TTFT timeouts.
-  const initialContents = (reqJson.request as any)?.contents || (reqJson as any).contents;
-  if (Array.isArray(initialContents) && initialContents.length > 35) {
-    const turnsCount = initialContents.length;
-    // Cap history to 40 turns (+ initial prompt = 41 turns) to keep TTFT well under 10s on Google Cloud Code
-    if (trimOldestHistory(reqJson, 30)) {
-      const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
-      log.info(`[Proxy] ⚡ [Proactive Context Trimmer] Heavy session detected (${turnsCount} turns). Proactively trimmed oldest history to ${remainingTurns} turns before first network dispatch.`);
+  if (process.env.AG_PROACTIVE_TRIM_HISTORY === '1') {
+    const initialContents = (reqJson.request as any)?.contents || (reqJson as any).contents;
+    if (Array.isArray(initialContents) && initialContents.length > 35) {
+      const turnsCount = initialContents.length;
+      if (trimOldestHistory(reqJson, 30)) {
+        const remainingTurns = ((reqJson.request || reqJson) as any)?.contents?.length;
+        log.info(`[Proxy] ⚡ [Proactive Context Trimmer] Heavy session detected (${turnsCount} turns). Proactively trimmed oldest history to ${remainingTurns} turns before first network dispatch.`);
+      }
     }
   }
 
@@ -978,10 +981,25 @@ export async function executeGoogleCloudCodeWithPool(
         );
       });
       if (boundAccount) {
-        const idx = sortedAccounts.indexOf(boundAccount);
-        if (idx > 0) {
-          sortedAccounts.splice(idx, 1);
-          sortedAccounts.unshift(boundAccount);
+        // Concurrency Guard: If the sticky session account is currently busy handling an in-flight request
+        // and other healthy accounts in the pool are completely idle, do not force-pin the busy account
+        // to avoid simultaneous stalls on the same upstream node.
+        const boundIsBusy = getAccountInFlight(boundAccount) >= 1;
+        const hasIdleAlternative = sortedAccounts.some(
+          (m) =>
+            m !== boundAccount &&
+            getAccountInFlight(m) === 0 &&
+            !isAccountInCooldown(m, modelFamily) &&
+            getModelQuotaScore(m, modelFamily) > 0,
+        );
+        if (!boundIsBusy || !hasIdleAlternative) {
+          const idx = sortedAccounts.indexOf(boundAccount);
+          if (idx > 0) {
+            sortedAccounts.splice(idx, 1);
+            sortedAccounts.unshift(boundAccount);
+          }
+        } else {
+          boundAccount = undefined;
         }
       } else {
         const boundCandidate = sortedAccounts.find((m) => getAccountQuotaKey(m) === affinity.accountKey);
@@ -1393,7 +1411,7 @@ export async function executeGoogleCloudCodeWithPool(
     const largeTimeoutMs = Math.min(
       isFlashModel
         ? (hasOtherCandidates && healthySiblingAccountsCount >= 1
-            ? (isThinkingModel ? 65_000 : 35_000)
+            ? (isThinkingModel ? (healthySiblingAccountsCount >= 2 ? 38_000 : 65_000) : 35_000)
             : (isThinkingModel ? (updatedBody.length > 100_000 ? 80_000 : 65_000) : 55_000))
         : 85_000,
       GOOGLE_PROXY_TIMEOUT_MS,
@@ -1449,12 +1467,13 @@ export async function executeGoogleCloudCodeWithPool(
       poolHeaderTimeout = Math.max(minViableTimeout, remainingPoolBudgetMs);
     }
 
-    // AUDIT-001: Under Low Headroom (<= 2 healthy accounts), strictly cap candidate timeout to 25s
-    // to guarantee that total attempts remain well under the client IDE abort threshold (~90-120s).
+    // AUDIT-001: Under Low Headroom, give candidates enough breathing room for KV prefill & reasoning.
+    // If only 1 healthy candidate exists, do not cap to 25s (let it use the full budget since there are no siblings).
+    // If 2 healthy accounts exist, cap to 40s to keep total attempt time within client timeout (~90-120s).
     const isLowHeadroom = initialHealthyCount > 0 && initialHealthyCount <= 2;
-    if (isLowHeadroom && poolHeaderTimeout > 25_000) {
-      log.info(`[Proxy] Low headroom pool (only ${initialHealthyCount} healthy accounts). Capping candidate timeout from ${Math.round(poolHeaderTimeout / 1000)}s to 25s to prevent client HTTP 499 disconnect.`);
-      poolHeaderTimeout = 25_000;
+    if (isLowHeadroom && initialHealthyCount === 2 && poolHeaderTimeout > 40_000) {
+      log.info(`[Proxy] Low headroom pool (2 healthy accounts). Allocating 40s per candidate to prevent client disconnect.`);
+      poolHeaderTimeout = 40_000;
     }
 
     const initialTurnsCount = Array.isArray((reqJson.request as any)?.contents || (reqJson as any)?.contents)
@@ -2159,8 +2178,9 @@ export async function executeGoogleCloudCodeWithPool(
 
       if (isCapacityExhausted) {
         consecutive503CapacityCount++;
+        const capacityThreshold = Math.min(CAPACITY_503_CASCADE_THRESHOLD, Math.max(2, Math.ceil(sortedAccounts.length * 0.5)));
         log.warn(
-          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Placing in 45s cooldown without clearing quota. (Capacity 503 count: ${consecutive503CapacityCount}/${CAPACITY_503_CASCADE_THRESHOLD})`,
+          `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Placing in 45s cooldown without clearing quota. (Capacity 503 count: ${consecutive503CapacityCount}/${capacityThreshold})`,
         );
         // Do not zero out the account's real 5-hour quota for transient upstream cluster capacity saturation.
         // Instead, cool down briefly (45s) and penalize latency to give the TPU pod time to shed load.
@@ -2168,7 +2188,7 @@ export async function executeGoogleCloudCodeWithPool(
         recordAccountLatency(candidate, 45_000);
 
         const combinedOutageCount = consecutive503CapacityCount + consecutive504TimeoutCount;
-        if (consecutive503CapacityCount >= CAPACITY_503_CASCADE_THRESHOLD || combinedOutageCount >= Math.max(2, CAPACITY_503_CASCADE_THRESHOLD)) {
+        if (consecutive503CapacityCount >= capacityThreshold || combinedOutageCount >= Math.max(2, capacityThreshold)) {
           log.warn(
             `[Proxy] ⚠️ Global TPU/Cluster Capacity Exhaustion detected on [${targetModel}] (${consecutive503CapacityCount} consecutive 503s, ${combinedOutageCount} total outages). Triggering immediate cross-family cascade to Claude...`,
           );
@@ -2779,9 +2799,17 @@ export async function executeGoogleCloudCodeWithPool(
         ? `${testedAccountsCount}/${totalAttempts}`
         : `${totalAttempts}/${totalAttempts}`;
       diagnostic.title = `${diagnostic.title} (${countLabel} comptes vérifiés)`;
-      diagnostic.message = testedAccountsCount < totalAttempts && lastStatus === 504
-        ? `Le service Google Cloud Code a expiré sur ${testedAccountsCount} comptes consécutifs (coupure amont détectée). Les ${totalAttempts - testedAccountsCount} comptes restants ont été préservés sans être bloqués.`
-        : `L'ensemble des ${totalAttempts} comptes configurés ont été testés automatiquement en arrière-plan, mais aucun n'est actuellement disponible (${diagnostic.errorType}).`;
+      if (testedAccountsCount < totalAttempts) {
+        if (lastStatus === 503) {
+          diagnostic.message = `Surcharge de capacité TPU détectée sur ${testedAccountsCount} comptes consécutifs. Les ${totalAttempts - testedAccountsCount} comptes restants ont été préservés sans être bloqués.`;
+        } else if (lastStatus === 504) {
+          diagnostic.message = `Le service Google Cloud Code a expiré sur ${testedAccountsCount} comptes consécutifs (coupure amont détectée). Les ${totalAttempts - testedAccountsCount} comptes restants ont été préservés sans être bloqués.`;
+        } else {
+          diagnostic.message = `Le service Google Cloud Code a rencontré une erreur (HTTP ${lastStatus}) sur ${testedAccountsCount} comptes consécutifs. Les ${totalAttempts - testedAccountsCount} comptes restants ont été préservés sans être bloqués.`;
+        }
+      } else {
+        diagnostic.message = `L'ensemble des ${totalAttempts} comptes configurés ont été testés automatiquement en arrière-plan, mais aucun n'est actuellement disponible (${diagnostic.errorType}).`;
+      }
     }
     if (!res.headersSent) {
       if (isStream) {

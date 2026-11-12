@@ -16,10 +16,10 @@ describe('Speculative Hedged Requests, 503 & 504 Timeout Cascade Architecture', 
     expect(HEDGED_REQUEST_DELAY_MS).toBe(expected);
   });
 
-  it('verifies CAPACITY_503_CASCADE_THRESHOLD is configured to 2', () => {
+  it('verifies CAPACITY_503_CASCADE_THRESHOLD is configured to 10', () => {
     const expected = process.env.AG_CAPACITY_503_CASCADE_THRESHOLD
       ? parseInt(process.env.AG_CAPACITY_503_CASCADE_THRESHOLD, 10)
-      : 2;
+      : 10;
     expect(CAPACITY_503_CASCADE_THRESHOLD).toBe(expected);
   });
 

@@ -45,6 +45,14 @@ describe('detectModelCapabilities', () => {
       { name: 'claude-haiku', provider: 'custom' },
       { isClaude: true },
     ],
+    [
+      { name: 'gemini-3.8-flash-tiered', provider: 'google' },
+      { isThinking: true, isClaude: false },
+    ],
+    [
+      { name: 'gemini-2.5-pro', provider: 'google' },
+      { isThinking: true, isClaude: false },
+    ],
   ])('detects capabilities for %j', (input, expected) => {
     const result = detectModelCapabilities(input as any);
     for (const [key, val] of Object.entries(expected)) {

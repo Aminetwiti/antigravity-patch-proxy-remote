@@ -112,7 +112,7 @@ export interface ModelModeConfig {
 
 // ─── Detection ────────────────────────────────────────────────────────────
 
-const THINKING_PATTERN = /thinking|reasoning|reasoner|o1|o3|r1|opus-4|sonnet-4|claude-4|4-7|4\.7/i;
+const THINKING_PATTERN = /thinking|reasoning|reasoner|o1|o3|r1|opus-4|sonnet-4|claude-4|4-7|4\.7|gemini-3|gemini-2\.5/i;
 const DEEPSEEK_PATTERN = /deepseek/i;
 const CLAUDE_PATTERN = /claude|opus|sonnet/i;
 const CLAUDE_THINKING_PATTERN = /opus-4|sonnet-4|claude-4|claude-3-5/i;
@@ -200,7 +200,7 @@ export function mapApiModelToModeConfig(apiModel: { id: string; name: string }, 
   let supportedThinkingBudgets: ThinkingBudget[] | undefined;
   let defaultMode: ModelMode = 'auto';
 
-  if (/o1|o3|r1/i.test(id)) {
+  if (/o1|o3|r1|gemini-3|gemini-2\.5/i.test(id)) {
     // OpenAI o1, o3, DeepSeek R1: support low/medium/high reasoning effort
     supportedReasoningEfforts = ['low', 'medium', 'high'];
     defaultMode = 'auto';

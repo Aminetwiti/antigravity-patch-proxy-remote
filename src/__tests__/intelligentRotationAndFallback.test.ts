@@ -529,7 +529,7 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
 
       expect(flashTimeoutMs).toBe(40_000);
     });
-    it('[FLASH-THINKING] applies 65_000ms candidate timeout for Flash Thinking when sibling candidates are available', () => {
+    it('[FLASH-THINKING] applies 65_000ms candidate timeout for Flash Thinking when single sibling candidate is available', () => {
       const isFlashModel = true;
       const hasOtherCandidates = true;
       const healthySiblingAccountsCount = 1;

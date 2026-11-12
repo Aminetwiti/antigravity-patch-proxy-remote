@@ -158,7 +158,7 @@ export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS
 export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2_500);
 
 /** Number of consecutive 503 Capacity Unavailable errors across different pool accounts before cascading to Claude (default: 2). */
-export const CAPACITY_503_CASCADE_THRESHOLD = getEnvInt('AG_CAPACITY_503_CASCADE_THRESHOLD', 2);
+export const CAPACITY_503_CASCADE_THRESHOLD = getEnvInt('AG_CAPACITY_503_CASCADE_THRESHOLD', 10);
 
 /** Number of consecutive 504 Gateway Timeout errors across different pool accounts before cascading to Claude/fallback (default: 2). */
 export const CONSECUTIVE_504_CASCADE_THRESHOLD = getEnvInt('AG_CONSECUTIVE_504_CASCADE_THRESHOLD', 2);
