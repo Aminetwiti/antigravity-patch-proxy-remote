@@ -4,7 +4,7 @@ import log from 'electron-log';
 import { safeWriteHead, safeEnd } from '../../../http/server/httpUtils';
 import { extractAndCacheThoughtSignatures } from '../../../core/shared';
 import { sanitizeCandidatesInResponse } from '../../stream/streamPipeline';
-import { logTokenUsageEvent } from '../../../state/remoteState';
+import { logTokenUsageEvent } from '../../../state/remote/remoteState';
 import type { ResponseClaimer } from '../../transforms/historyTrimmer';
 import type { GoogleRequestOutcome } from './types';
 

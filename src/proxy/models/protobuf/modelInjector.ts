@@ -1,9 +1,9 @@
-import log from 'electron-log';
+ï»¿import log from 'electron-log';
 import { loadCustomModels } from '../catalog/modelLoader';
 import { detectModelCapabilities, getCanonicalModelKey } from '../catalog/modelUtils';
 import { generateModelPlaceholderId, toSlug } from '../catalog/idGenerator';
 import { getCachedHealth, ModelHealthResult } from '../../resilience/pools/modelHealthChecker';
-import { isRecentModel } from '../../state/recentModelsStore';
+import { isRecentModel } from '../../state/local/recentModelsStore';
 import type { CustomModel } from '../../core/types';
 import { expandModelsWithEffort } from '../../engine/transforms/effortExpander';
 import { isObsoleteModel } from '../../../constants';
@@ -41,7 +41,7 @@ function sortCustomModels(models: CustomModel[]): CustomModel[] {
 export function deduplicateModels(models: CustomModel[]): CustomModel[] {
   const seenKeys = new Set<string>();
   return models.filter((m) => {
-    // Per-account Google entries are dispatch/quota only — the unified
+    // Per-account Google entries are dispatch/quota only ï¿½ the unified
     // "auto-pool" entry represents them in the model dropdown.
     if (m._poolOnly) return false;
     const effort = m._effortSuffix || '';
@@ -61,12 +61,12 @@ function formatDisplayName(m: CustomModel): string {
   const favTag = isFav ? '? ' : '';
   
   if (!health || health.status === 'healthy' || health.status === 'slow') {
-    return `${favTag}?? • ${dispName}`;
+    return `${favTag}?? ï¿½ ${dispName}`;
   }
   
   // For unhealthy models, display error tag cleanly
   const err = health.error || 'Offline';
-  return `${favTag}?? [${err}] • ${dispName}`;
+  return `${favTag}?? [${err}] ï¿½ ${dispName}`;
 }
 
 export function resolvePlanModelEnum(modelName?: string): string {

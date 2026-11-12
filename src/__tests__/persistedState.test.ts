@@ -29,7 +29,7 @@ import {
   MIN_FLUSH_INTERVAL_MS,
   STATE_FILE_NAME,
   _resetFlushThrottle,
-} from '../proxy/state/persistedState';
+} from '../proxy/state/local/persistedState';
 import { _resetAllBreakers } from '../proxy/resilience/circuit/circuitBreaker';
 import { _resetRetryBudget } from '../proxy/resilience/retry/retryBudget';
 

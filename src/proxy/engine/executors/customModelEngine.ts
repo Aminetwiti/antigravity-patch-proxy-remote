@@ -32,7 +32,7 @@ import {
 import { expandModelsWithEffort } from '../transforms/effortExpander';
 import { markProviderRateLimited, isProviderRateLimited } from '../../models/catalog/modelRouter';
 import { trimContextPayload } from '../transforms/contextTrimmer';
-import { recordRecentModel } from '../../state/recentModelsStore';
+import { recordRecentModel } from '../../state/local/recentModelsStore';
 import {
   normalizeCloudCodeModelId,
   isGoogleCloudCodeModel,
@@ -91,7 +91,7 @@ import {
   PREVENTIVE_COOLDOWN_MS,
 } from '../../resilience/pools/googlePool';
 import { safeWriteHead, safeEnd, parseRetryAfter, proxyLog } from '../../http/server/httpUtils';
-import { logTokenUsageEvent } from '../../state/remoteState';
+import { logTokenUsageEvent } from '../../state/remote/remoteState';
 import {
   generateGracefulMarkdown,
   emitProxyError,

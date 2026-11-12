@@ -14,7 +14,7 @@ import {
   _buildSnapshot,
   formatSnapshot,
   knownDefaultProviders,
-} from '../proxy/state/diagnostics';
+} from '../proxy/state/observability/diagnostics';
 import { _resetProviderGate } from '../proxy/resilience/circuit/providerGate';
 import { _resetAllBreakers } from '../proxy/resilience/circuit/circuitBreaker';
 import { _resetRetryBudget } from '../proxy/resilience/retry/retryBudget';

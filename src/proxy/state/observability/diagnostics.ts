@@ -37,14 +37,14 @@
  */
 
 import { createHash } from 'crypto';
-import { DEFAULT_MAX_RETRIES } from '../../constants';
-import { getRetryBudget } from '../resilience/retry/retryBudget';
-import { snapshotBreakers } from '../resilience/circuit/circuitBreaker';
-import { loadCustomModels } from '../models/catalog/modelLoader';
+import { DEFAULT_MAX_RETRIES } from '../../../constants';
+import { getRetryBudget } from '../../resilience/retry/retryBudget';
+import { snapshotBreakers } from '../../resilience/circuit/circuitBreaker';
+import { loadCustomModels } from '../../models/catalog/modelLoader';
 import {
   DEFAULT_TRUSTED_PROVIDERS,
   snapshot as gateSnapshot,
-} from '../resilience/circuit/providerGate';
+} from '../../resilience/circuit/providerGate';
 
 const moduleLoadTime = Date.now();
 

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { fresh, toFile, compact } from '../proxy/state/persistedState';
+import { fresh, toFile, compact } from '../proxy/state/local/persistedState';
 import { CIRCUIT_BREAKER_RESET_MS } from '../proxy/resilience/circuit/circuitBreaker';
 import { RETRY_BUDGET_HALF_LIFE_MS } from '../proxy/resilience/retry/retryBudget';
 

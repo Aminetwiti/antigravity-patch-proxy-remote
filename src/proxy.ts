@@ -90,7 +90,7 @@ export {
   ensureRemoteExecScriptOnDisk,
   updateRemoteVpsConfig,
   remoteVpsState,
-} from './proxy/state/remoteState';
+} from './proxy/state/remote/remoteState';
 
 export {
   enrichExperimentsPayload,

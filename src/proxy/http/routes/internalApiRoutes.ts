@@ -13,8 +13,8 @@ import {
   remoteSessionsMap,
   updateRemoteVpsConfig,
   executeOnRemoteDaemon,
-} from '../../state/remoteState';
-import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from '../../state/diagnostics';
+} from '../../state/remote/remoteState';
+import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from '../../state/observability/diagnostics';
 import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './metricsRoute';
 import { loadCustomModels } from '../../models/catalog/modelLoader';
 import { generateModelPlaceholderId } from '../../models/catalog/idGenerator';

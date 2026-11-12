@@ -44,9 +44,9 @@ import {
   applyBreakerPatch,
   gather as gatherPersisted,
   flush as flushPersisted,
-} from '../../state/persistedState';
+} from '../../state/local/persistedState';
 import { CIRCUIT_BREAKER_RESET_MS } from '../../resilience/circuit/circuitBreaker';
-import { restoreRecentModels } from '../../state/recentModelsStore';
+import { restoreRecentModels } from '../../state/local/recentModelsStore';
 import { disposeAll as disposeAgentPool, warmTlsConnection } from '../../resilience/pools/agentPool';
 
 let server: http.Server | null = null;

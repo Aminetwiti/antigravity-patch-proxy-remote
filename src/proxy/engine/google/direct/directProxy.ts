@@ -10,7 +10,7 @@ import { resolveGoogleIp } from '../../../http/server/dnsResolver';
 import { safeWriteHead, safeEnd, proxyLog, newTraceId } from '../../../http/server/httpUtils';
 import { unlockCodeAssistPayload, saveCachedCodeAssist } from '../../../http/routes/endpointHandlers';
 import { sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../../stream/streamPipeline';
-import { logTokenUsageEvent } from '../../../state/remoteState';
+import { logTokenUsageEvent } from '../../../state/remote/remoteState';
 import {
   recordNativeSessionError,
   recordLatestNativeError,

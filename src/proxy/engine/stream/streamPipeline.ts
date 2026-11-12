@@ -1,4 +1,4 @@
-import * as http from 'http';
+ï»¿import * as http from 'http';
 import * as zlib from 'zlib';
 import * as path from 'path';
 import * as os from 'os';
@@ -11,7 +11,7 @@ import { IdleTimeoutGuard } from '../../resilience/circuit/idleTimeout';
 import { extractAndCacheThoughtSignatures, ANTI_HALLUCINATION_TOOL_INSTRUCTION } from '../../core/shared';
 import { classifyError, ErrorDiagnostic, ErrorType } from '../../resilience/retry/errorClassifier';
 import type { CustomModel } from '../../core/types';
-import { logTokenUsageEvent } from '../../state/remoteState';
+import { logTokenUsageEvent } from '../../state/remote/remoteState';
 
 // --- Proxy Error Diagnostics & Markdown --------------------------------------
 
@@ -24,7 +24,7 @@ export function generateGracefulMarkdown(diagnostic: ErrorDiagnostic, model?: Cu
   md += `> **${title}**\n>\n`;
   if (model) {
     const modelName = model.displayName || model.name;
-    const providerStr = model.provider ? ` · **Provider:** \`${model.provider}\`` : '';
+    const providerStr = model.provider ? ` ï¿½ **Provider:** \`${model.provider}\`` : '';
     md += `> **Model:** \`${modelName}\`${providerStr}\n>\n`;
   }
   md += `> ${diagnostic.message}\n`;
@@ -71,7 +71,7 @@ export function emitProxyError(p: ProxyErrorPayload): void {
   try {
     process.stderr.write(JSON.stringify(p) + '\n');
   } catch {
-    // stdio might be closed in unit tests — swallow.
+    // stdio might be closed in unit tests ï¿½ swallow.
   }
 }
 
@@ -623,7 +623,7 @@ export function transformGoogleStreamForRemote(
     idleTimeoutMs: effectiveIdleTimeoutMs,
     label: modelName || 'google-stream',
     onTimeout: (err) => {
-      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} — aborting socket`);
+      log.warn(`[Proxy] Google stream idle timeout (${STREAM_IDLE_TIMEOUT_MS}ms) for ${modelName || 'google-stream'} ï¿½ aborting socket`);
       cleanupHeartbeat();
       autoUnstickConversation(convId);
       try { proxyRes.destroy(err); } catch (_) {}
@@ -884,7 +884,7 @@ export function transformGoogleStreamForRemote(
           candidates: [
             {
               content: {
-                parts: [{ text: '\n\n> ?? *[Proxy] La connexion au modèle a été interrompue prématurément par une erreur réseau upstream.*' }],
+                parts: [{ text: '\n\n> ?? *[Proxy] La connexion au modï¿½le a ï¿½tï¿½ interrompue prï¿½maturï¿½ment par une erreur rï¿½seau upstream.*' }],
                 role: 'model',
               },
               finishReason: 'STOP',
