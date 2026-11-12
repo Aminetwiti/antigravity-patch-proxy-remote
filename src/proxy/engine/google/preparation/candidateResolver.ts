@@ -1,4 +1,4 @@
-﻿import log from 'electron-log';
+import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import {
   isTokenRevoked,
@@ -201,30 +201,40 @@ export function applyStickySessionAndP2C(
   return boundAccount;
 }
 
-export async function handleSaturatedCandidateSlots(
-  sortedAccounts: CustomModel[],
+export async function shouldSkipSaturatedCandidate(
+  candidate: CustomModel,
   modelFamily: string,
-): Promise<void> {
-  const hasEligibleAccounts = sortedAccounts.some(
-    (a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0,
-  );
-  const allSaturated =
-    hasEligibleAccounts &&
-    sortedAccounts.every((a) => {
-      if (isAccountInCooldown(a, modelFamily) || getOpenBreaker(a) || getModelQuotaScore(a, modelFamily) <= 0) {
-        return true;
-      }
-      const max = isAccountInProbation(a, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
-      return getAccountInFlight(a) >= max;
-    });
+  fallbackDepth: number,
+  boundAccount: CustomModel | undefined,
+  sortedAccounts: CustomModel[],
+  busyCandidateAccounts: CustomModel[],
+): Promise<boolean> {
+  const baseMax = isAccountInProbation(candidate, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT;
+  const maxSlots = fallbackDepth > 0 && !isAccountInProbation(candidate, modelFamily) ? baseMax + 1 : baseMax;
+  if (getAccountInFlight(candidate) < maxSlots) return false;
 
-  if (allSaturated) {
-    log.debug(
-      `[Proxy] All eligible accounts in Google pool are saturated (${MAX_CONCURRENT_PER_ACCOUNT} in-flight reqs). Waiting up to 1500ms for an available slot...`,
-    );
-    await waitForAccountSlot(sortedAccounts, modelFamily, 1500);
-    const resort = sortCandidateAccounts(sortedAccounts, modelFamily);
-    sortedAccounts.length = 0;
-    sortedAccounts.push(...resort);
+  if (boundAccount && candidate === boundAccount) {
+    await waitForAccountSlot([candidate], modelFamily, 2500);
   }
+  if (getAccountInFlight(candidate) < maxSlots) return false;
+
+  const hasOther = sortedAccounts.some(
+    (c) =>
+      c !== candidate &&
+      (c as any).enabled !== false &&
+      !isAccountInCooldown(c, modelFamily) &&
+      getModelQuotaScore(c, modelFamily) > 0 &&
+      getAccountInFlight(c) < (isAccountInProbation(c, modelFamily) ? 1 : MAX_CONCURRENT_PER_ACCOUNT),
+  );
+  if (hasOther) {
+    if (!busyCandidateAccounts.includes(candidate)) busyCandidateAccounts.push(candidate);
+    return true;
+  }
+
+  await waitForAccountSlot(sortedAccounts, modelFamily, 2000);
+  if (getAccountInFlight(candidate) >= maxSlots) {
+    if (!busyCandidateAccounts.includes(candidate)) busyCandidateAccounts.push(candidate);
+    return true;
+  }
+  return false;
 }

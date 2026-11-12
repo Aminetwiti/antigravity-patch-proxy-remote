@@ -1,11 +1,11 @@
-ï»¿import * as http from 'http';
+import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import log from 'electron-log';
-import { DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from '../../constants';
+import { DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from '../../../constants';
 import { readBodyWithLimit } from './bodyLimitGuard';
-import { safeWriteHead, safeEnd } from './httpUtils';
+import { safeWriteHead, safeEnd } from '../server/httpUtils';
 import {
   isRemoteVpsActive,
   remoteVpsHost,
@@ -13,19 +13,19 @@ import {
   remoteSessionsMap,
   updateRemoteVpsConfig,
   executeOnRemoteDaemon,
-} from '../state/remoteState';
-import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from '../state/diagnostics';
+} from '../../state/remoteState';
+import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } from '../../state/diagnostics';
 import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './metricsRoute';
-import { loadCustomModels } from '../models/modelLoader';
-import { generateModelPlaceholderId } from '../models/idGenerator';
-import { getOpenBreaker } from '../resilience/circuit/circuitBreaker';
+import { loadCustomModels } from '../../models/modelLoader';
+import { generateModelPlaceholderId } from '../../models/idGenerator';
+import { getOpenBreaker } from '../../resilience/circuit/circuitBreaker';
 import {
   isGoogleCloudCodeModel,
   getLiveAccountQuota,
   pollAllGoogleQuotas,
   isTokenRevoked,
   isTokenCached,
-} from '../../services/auth/googleAuth';
+} from '../../../services/auth/googleAuth';
 import {
   getAccountQuotaKey,
   verifyAndReconcileCooldowns,
@@ -38,7 +38,7 @@ import {
   getAccountCooldownRemaining,
   MAX_CONCURRENT_PER_ACCOUNT,
   autoHealAccountOnQuotaRecovery,
-} from '../resilience/pools/googlePool';
+} from '../../resilience/pools/googlePool';
 
 export function handleInternalApiRoute(
   req: http.IncomingMessage,
@@ -136,8 +136,8 @@ export function handleInternalApiRoute(
       { label: 'Continue', text: 'Continue' },
       { label: 'Analyser et auditer', text: 'Analyser et auditer le code et les erreurs' },
       { label: 'Keep going', text: 'Keep going' },
-      { label: 'ExÃ©cuter all steps', text: 'ExÃ©cuter toutes les Ã©tapes prÃ©vues' },
-      { label: 'Next phase', text: 'Passer Ã  la phase suivante (Next phase)' },
+      { label: 'Exécuter all steps', text: 'Exécuter toutes les étapes prévues' },
+      { label: 'Next phase', text: 'Passer à la phase suivante (Next phase)' },
     ];
     const getConfigPath = () => {
       const home = process.env.USERPROFILE || process.env.HOME || os.homedir();

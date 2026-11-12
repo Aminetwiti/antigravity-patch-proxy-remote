@@ -9,9 +9,9 @@
   stopProxyServer,
   getProxyPort,
   isProxyRunning,
-} from './proxy/http/serverLifecycle';
+} from './proxy/http/server/serverLifecycle';
 
-import { handleRequest } from './proxy/http/httpRouter';
+import { handleRequest } from './proxy/http/server/httpRouter';
 
 export {
   setupCustomModelsWatcher,
@@ -67,7 +67,7 @@ export {
   matchesCustomModel,
 } from './proxy/models/modelUtils';
 
-export { parseRetryAfter, isAllowedOrigin } from './proxy/http/httpUtils';
+export { parseRetryAfter, isAllowedOrigin } from './proxy/http/server/httpUtils';
 
 export {
   ResponseClaimer,
@@ -107,7 +107,7 @@ export {
   memoryListExperimentsTime,
   memoryFetchAvailableModelsTime,
   memoryLoadCodeAssistTime,
-} from './proxy/http/endpointHandlers';
+} from './proxy/http/routes/endpointHandlers';
 
 export {
   generateGracefulMarkdown,

@@ -1,7 +1,7 @@
-﻿import https from 'https';
+import https from 'https';
 import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
-import { getHttpsAgent } from '../../agentPool';
+import { getHttpsAgent } from '../../pools/agentPool';
 import { PREFLIGHT_HEALTH_CHECK_TIMEOUT_MS } from '../../../../constants';
 import {
   getValidGoogleAccessToken,
@@ -127,7 +127,7 @@ export async function probeGoogleAccountPreflight(
             recordAccountLatency(account, latencyMs);
             delete (account as any).isValidationRequired;
             clearAccountChallengeFromDisk(email);
-            log.info(`[PreFlight] ✅ Account [${email}] is healthy (HTTP 200, ${latencyMs}ms)`);
+            log.info(`[PreFlight] ? Account [${email}] is healthy (HTTP 200, ${latencyMs}ms)`);
             finish({ email, ok: true, statusCode: status, latencyMs, reason: 'OK' });
             return;
           }
@@ -142,7 +142,7 @@ export async function probeGoogleAccountPreflight(
 
           const isLocationBlock = (status === 400 || status === 403) && /location is not supported|user location|failed_precondition/i.test(reason);
           if (isLocationBlock) {
-            log.warn(`[PreFlight] ⚠️ Account [${email}] network location blocked (HTTP ${status}): ${reason}`);
+            log.warn(`[PreFlight] ?? Account [${email}] network location blocked (HTTP ${status}): ${reason}`);
             finish({ email, ok: false, statusCode: status, latencyMs, reason: `Location not supported: ${reason}` });
             return;
           }
@@ -151,7 +151,7 @@ export async function probeGoogleAccountPreflight(
           if (isSecurityChallenge) {
             markAccountUnlicensed(account);
             setAccountCooldown(account, 7 * 24 * 3600 * 1000);
-            log.warn(`[PreFlight] ⚠️ Account [${email}] security challenge (HTTP ${status}): quarantined. (${reason})`);
+            log.warn(`[PreFlight] ?? Account [${email}] security challenge (HTTP ${status}): quarantined. (${reason})`);
             finish({ email, ok: false, statusCode: status, latencyMs, reason: `Security challenge: ${reason}` });
             return;
           }
@@ -176,16 +176,16 @@ export async function probeGoogleAccountPreflight(
                 geminiWeeklyReset: decision.weeklyResetMs ? new Date(nowMs + decision.weeklyResetMs).toISOString() : existingQuota?.geminiWeeklyReset,
                 updatedAt: nowMs,
               } as AccountLiveQuota);
-              log.warn(`[PreFlight] ⚠️ Account [${email}] quota exhausted (HTTP 429, ${decision.reason}): cooldown ${Math.round(cooldownMs / 3600_000)}h.`);
+              log.warn(`[PreFlight] ?? Account [${email}] quota exhausted (HTTP 429, ${decision.reason}): cooldown ${Math.round(cooldownMs / 3600_000)}h.`);
             } else {
-              log.warn(`[PreFlight] ⚠️ Account [${email}] rate-limited (HTTP 429, ${decision.category}): paused ${Math.round(cooldownMs / 1000)}s.`);
+              log.warn(`[PreFlight] ?? Account [${email}] rate-limited (HTTP 429, ${decision.category}): paused ${Math.round(cooldownMs / 1000)}s.`);
             }
             finish({ email, ok: false, statusCode: status, latencyMs, reason: `HTTP 429 (${decision.category})` });
             return;
           }
 
           setAccountCooldown(account, 60_000, 'gemini', true);
-          log.warn(`[PreFlight] ⚠️ Account [${email}] HTTP ${status}: placed in 60s cooldown.`);
+          log.warn(`[PreFlight] ?? Account [${email}] HTTP ${status}: placed in 60s cooldown.`);
           finish({ email, ok: false, statusCode: status, latencyMs, reason: `HTTP ${status}: ${reason}` });
         });
       },
@@ -195,10 +195,10 @@ export async function probeGoogleAccountPreflight(
       const latencyMs = Date.now() - startTime;
       if (process.env.AG_PREFLIGHT_QUARANTINE_ON_TIMEOUT !== '0') {
         setAccountCooldown(account, 60_000, 'gemini', true);
-        log.warn(`[PreFlight] ⚠️ Preflight probe timed out for [${email}] on Gemini (> ${timeoutMs}ms). Placed in 60s transient cooldown.`);
+        log.warn(`[PreFlight] ?? Preflight probe timed out for [${email}] on Gemini (> ${timeoutMs}ms). Placed in 60s transient cooldown.`);
       } else {
         recordAccountLatency(account, Math.max(latencyMs, 45_000));
-        log.warn(`[PreFlight] ⚠️ Preflight probe timed out for [${email}] on Gemini (> ${timeoutMs}ms). Latency penalized without hard cooldown.`);
+        log.warn(`[PreFlight] ?? Preflight probe timed out for [${email}] on Gemini (> ${timeoutMs}ms). Latency penalized without hard cooldown.`);
       }
       finish({
         email,
@@ -251,7 +251,7 @@ export async function probeAllGoogleAccountsPreflight(
   }
 
   const queue = Array.from(uniqueMap.values());
-  log.info(`[PreFlight] 🔍 Starting proactive health check across ${queue.length} unique Google account(s)...`);
+  log.info(`[PreFlight] ?? Starting proactive health check across ${queue.length} unique Google account(s)...`);
 
   const results: PreflightProbeResult[] = [];
   const safeConcurrency = Math.min(2, concurrencyLimit, queue.length);

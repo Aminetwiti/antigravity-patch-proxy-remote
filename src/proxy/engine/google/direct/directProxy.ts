@@ -6,9 +6,9 @@ import { startTimer as metricTimer, inc as metricInc, observe as metricObserve }
 import { GOOGLE_HOSTS, GOOGLE_PROXY_TIMEOUT_MS } from '../../../../constants';
 import { extractAndCacheThoughtSignatures } from '../../../core/shared';
 import { extractModelNameFromPayload } from '../../../models/modelUtils';
-import { resolveGoogleIp } from '../../../http/dnsResolver';
-import { safeWriteHead, safeEnd, proxyLog, newTraceId } from '../../../http/httpUtils';
-import { unlockCodeAssistPayload, saveCachedCodeAssist } from '../../../http/endpointHandlers';
+import { resolveGoogleIp } from '../../../http/server/dnsResolver';
+import { safeWriteHead, safeEnd, proxyLog, newTraceId } from '../../../http/server/httpUtils';
+import { unlockCodeAssistPayload, saveCachedCodeAssist } from '../../../http/routes/endpointHandlers';
 import { sanitizeCandidatesInResponse, transformGoogleStreamForRemote } from '../../streamPipeline';
 import { logTokenUsageEvent } from '../../../state/remoteState';
 import {

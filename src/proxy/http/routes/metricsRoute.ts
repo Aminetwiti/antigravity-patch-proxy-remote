@@ -28,7 +28,7 @@
  * not scraping.
  */
 
-import * as metrics from '../../metrics';
+import * as metrics from '../../../metrics';
 
 export type MetricsSnapshot = ReturnType<typeof metrics.snapshot>;
 

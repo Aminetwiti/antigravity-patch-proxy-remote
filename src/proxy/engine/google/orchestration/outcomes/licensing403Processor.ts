@@ -4,13 +4,13 @@ import type { PoolLoopState } from '../types';
 import {
   setAccountCooldown,
   markAccountUnlicensed,
-} from '../../../../resilience/googlePool';
+} from '../../../../resilience/pools/googlePool';
 import {
   isGoogleCloudCodeModel,
   getValidGoogleAccessToken,
   onboardUserAndAcceptTerms,
 } from '../../../../../services/auth/googleAuth';
-import { sessionAffinities } from '../../../../resilience/sessionAffinities';
+import { sessionAffinities } from '../../../../resilience/pools/sessionAffinities';
 
 export async function processOutcome403(
   candidate: CustomModel,

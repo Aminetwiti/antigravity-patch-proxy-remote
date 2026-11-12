@@ -16,7 +16,7 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-vi.mock('../proxy/http/dnsResolver', () => ({
+vi.mock('../proxy/http/server/dnsResolver', () => ({
   resolveGoogleIp: vi.fn().mockResolvedValue('142.250.180.206'),
   invalidateCachedDns: vi.fn(),
 }));

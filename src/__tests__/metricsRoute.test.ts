@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the `/__metrics__` route module (Phase 7.1).
  *
  * Asserts:
@@ -15,7 +15,7 @@ import {
   metricsEnabled,
   negotiateContentType,
   getMetricsSnapshot,
-} from '../proxy/http/metricsRoute';
+} from '../proxy/http/routes/metricsRoute';
 
 describe('metricsRoute / metricsEnabled', () => {
   it('defaults to false', () => {

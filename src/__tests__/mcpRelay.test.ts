@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+﻿import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -28,7 +28,7 @@ afterEach(() => {
 
 describe('loadMcpConfig', () => {
   it('parses a valid mcp_config.json', async () => {
-    const { loadMcpConfig } = await import('../proxy/http/mcpRelay');
+    const { loadMcpConfig } = await import('../proxy/http/routes/mcpRelay');
     writeConfig({
       coolify: { command: 'coolify-mcp', env: { COOLIFY_BASE_URL: 'https://x' } },
     });
@@ -37,13 +37,13 @@ describe('loadMcpConfig', () => {
   });
 
   it('returns empty map when config is missing', async () => {
-    const { loadMcpConfig } = await import('../proxy/http/mcpRelay');
+    const { loadMcpConfig } = await import('../proxy/http/routes/mcpRelay');
     const { servers } = loadMcpConfig();
     expect(servers).toEqual({});
   });
 
   it('returns empty map on invalid JSON', async () => {
-    const { loadMcpConfig } = await import('../proxy/http/mcpRelay');
+    const { loadMcpConfig } = await import('../proxy/http/routes/mcpRelay');
     fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
     fs.writeFileSync(CONFIG_PATH, '{not json', 'utf-8');
     const { servers } = loadMcpConfig();
@@ -53,7 +53,7 @@ describe('loadMcpConfig', () => {
 
 describe('mcpListServers', () => {
   it('lists configured servers with command and args', async () => {
-    const { mcpListServers } = await import('../proxy/http/mcpRelay');
+    const { mcpListServers } = await import('../proxy/http/routes/mcpRelay');
     writeConfig({
       coolify: { command: 'coolify-mcp', args: ['--port', '9999'], env: {} },
       filesystem: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'], env: {} },
@@ -68,7 +68,7 @@ describe('mcpListServers', () => {
   });
 
   it('hides internal servers from the mobile listing', async () => {
-    const { mcpListServers } = await import('../proxy/http/mcpRelay');
+    const { mcpListServers } = await import('../proxy/http/routes/mcpRelay');
     writeConfig({
       'antigravity-internal': { command: 'internal' },
       'user-server': { command: 'npx', args: ['x'] },
@@ -78,7 +78,7 @@ describe('mcpListServers', () => {
   });
 
   it('returns empty list when no config', async () => {
-    const { mcpListServers } = await import('../proxy/http/mcpRelay');
+    const { mcpListServers } = await import('../proxy/http/routes/mcpRelay');
     const res = await mcpListServers();
     expect(res.servers).toEqual([]);
   });

@@ -1,7 +1,7 @@
-import type http from 'http';
+﻿import type http from 'http';
 import * as zlib from 'zlib';
 import log from 'electron-log';
-import { safeWriteHead, safeEnd } from '../../../http/httpUtils';
+import { safeWriteHead, safeEnd } from '../../../http/server/httpUtils';
 import { extractAndCacheThoughtSignatures } from '../../../core/shared';
 import { sanitizeCandidatesInResponse } from '../../streamPipeline';
 import { logTokenUsageEvent } from '../../../state/remoteState';

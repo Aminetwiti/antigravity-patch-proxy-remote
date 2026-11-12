@@ -6,9 +6,9 @@ import {
   getModelQuotaScore,
   isAccountInCooldown,
   recordAccountLatency,
-} from '../../../../resilience/googlePool';
-import { sessionAffinities } from '../../../../resilience/sessionAffinities';
-import { metricObserve } from '../../../../../metrics';
+} from '../../../../resilience/pools/googlePool';
+import { sessionAffinities } from '../../../../resilience/pools/sessionAffinities';
+import { observe as metricObserve } from '../../../../../metrics';
 import { trimContextPayload } from '../../../contextTrimmer';
 import { trimOldestHistory } from '../../../historyTrimmer';
 import { normalizeConversationTurns } from '../../../../../services/auth/googleAuth';

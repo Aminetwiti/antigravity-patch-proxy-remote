@@ -1,15 +1,15 @@
-import log from 'electron-log';
+﻿import log from 'electron-log';
 import type { CustomModel, GeminiRequestBody } from '../../../../core/types';
 import type { FallbackParams } from './types';
 import { isGoogleCloudCodeModel } from '../../../../../services/auth/googleAuth';
-import { getOpenBreaker } from '../../../../resilience/circuitBreaker';
+import { getOpenBreaker } from '../../../../resilience/circuit/circuitBreaker';
 import { isProviderRateLimited } from '../../../../models/modelRouter';
 import { writeSafeSseChunk } from '../../../streamPipeline';
-import { safeWriteHead } from '../../../../http/httpUtils';
+import { safeWriteHead } from '../../../../http/server/httpUtils';
 import {
   getSessionModelFallback,
   setSessionModelFallback,
-} from '../../../../resilience/sessionAffinities';
+} from '../../../../resilience/pools/sessionAffinities';
 import { handleCustomModelRequest } from '../../../customModelEngine';
 
 export async function attemptExternalCascade(

@@ -1,4 +1,4 @@
-﻿import * as http from 'http';
+import * as http from 'http';
 import https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,8 +8,8 @@ import {
   GOOGLE_HOSTS,
   LOOPBACK_HOSTS,
   DEFAULT_MAX_BODY_SIZE,
-} from '../../constants';
-import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from '../core/types';
+} from '../../../constants';
+import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from '../../core/types';
 import {
   modelToolCallIds,
   modelReasoningContent,
@@ -19,37 +19,37 @@ import {
   sanitizeUnsignedToolCalls,
   flattenAllToolCallsToText,
   isConvCorruptedSignatures,
-} from '../core/shared';
-import { loadCustomModels } from '../models/modelLoader';
-import { getOpenBreaker } from '../resilience/circuit/circuitBreaker';
-import { handleInternalApiRoute } from './internalApiRoutes';
-import { getBaseModelId } from '../core/urlBuilder';
-import { generateModelPlaceholderId, toSlug } from '../models/idGenerator';
-import { expandModelsWithEffort } from '../engine/effortExpander';
+} from '../../core/shared';
+import { loadCustomModels } from '../../models/modelLoader';
+import { getOpenBreaker } from '../../resilience/circuit/circuitBreaker';
+import { handleInternalApiRoute } from '../routes/internalApiRoutes';
+import { getBaseModelId } from '../../core/urlBuilder';
+import { generateModelPlaceholderId, toSlug } from '../../models/idGenerator';
+import { expandModelsWithEffort } from '../../engine/effortExpander';
 import {
   isNativeCloudCodeModel,
   extractModelNameFromPayload,
   clampSubagentReasoning,
   matchesCustomModel,
-} from '../models/modelUtils';
+} from '../../models/modelUtils';
 import { resolveGoogleIp } from './dnsResolver';
-import { checkAllModelsHealth } from '../resilience/pools/modelHealthChecker';
-import { mcpListServers, mcpCallTool } from './mcpRelay';
+import { checkAllModelsHealth } from '../../resilience/pools/modelHealthChecker';
+import { mcpListServers, mcpCallTool } from '../routes/mcpRelay';
 import {
   normalizeCloudCodeModelId,
   normalizeGoogleModelId,
   isGoogleCloudCodeModel,
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
-} from '../../services/auth/googleAuth';
-import { selectBestModelByQuota, getGoogleAccountPool } from '../resilience/pools/googlePool';
+} from '../../../services/auth/googleAuth';
+import { selectBestModelByQuota, getGoogleAccountPool } from '../../resilience/pools/googlePool';
 import { safeWriteHead, safeEnd, isAllowedOrigin, proxyLog } from './httpUtils';
-import { resolveFileData } from '../engine/historyTrimmer';
+import { resolveFileData } from '../../engine/historyTrimmer';
 import {
   mergeModels,
   injectCustomSlugsIntoAgentModelSorts,
   buildSyntheticModelsResponse,
-} from '../models/modelInjector';
+} from '../../models/modelInjector';
 import {
   enrichExperimentsPayload,
   unlockCodeAssistPayload,
@@ -64,8 +64,8 @@ import {
   handleGetUserStatusProxy,
   memoryListExperimentsTime,
   memoryFetchAvailableModelsTime,
-} from './endpointHandlers';
-import { injectAntiHallucinationInstruction } from '../engine/streamPipeline';
+} from '../routes/endpointHandlers';
+import { injectAntiHallucinationInstruction } from '../../engine/streamPipeline';
 import { getProxyPort } from './serverLifecycle';
 import {
   extractSessionId,
@@ -81,11 +81,11 @@ import {
   getSessionEffortAffinity,
   getSessionBoundModel,
   bindSessionToModel,
-} from '../resilience/pools/sessionAffinities';
-import { proxyToGoogle, executeGoogleCloudCodeWithPool } from '../engine/googleCloudEngine';
-import { handleCustomModelRequest } from '../engine/customModelEngine';
+} from '../../resilience/pools/sessionAffinities';
+import { proxyToGoogle, executeGoogleCloudCodeWithPool } from '../../engine/googleCloudEngine';
+import { handleCustomModelRequest } from '../../engine/customModelEngine';
 
-// ─── Main Request Handler ─────────────────────────────────────────────────
+// --- Main Request Handler -------------------------------------------------
 
 export function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
   // Ultra-low latency: Disable Nagle algorithm on loopback sockets immediately
@@ -117,7 +117,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
     return;
   }
 
-  // Health check — keep this FIRST so the LS sees a live port even if other
+  // Health check � keep this FIRST so the LS sees a live port even if other
   // initialization (padding strip, model loading, etc.) is delayed or fails.
   if (req.method === 'GET' && (req.url === '/health' || req.url === '/healthz')) {
     log.debug(`[Proxy] /health hit from ${req.socket.remoteAddress || 'unknown'}`);
@@ -933,8 +933,8 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
             unlockModelsMap(googleJson.availableModels);
             unlockModelsMap(googleJson.available_models);
 
-            // 2. Injecter les modèles personnalisés dans agentModelSorts (menu déroulant Antigravity IDE)
-            // Modèles originaux en tête de liste, modèles personnalisés ajoutés sans duplication
+            // 2. Injecter les mod�les personnalis�s dans agentModelSorts (menu d�roulant Antigravity IDE)
+            // Mod�les originaux en t�te de liste, mod�les personnalis�s ajout�s sans duplication
             try {
               if (typeof injectCustomSlugsIntoAgentModelSorts === 'function') {
                 injectCustomSlugsIntoAgentModelSorts(googleJson, customModels);
@@ -1192,7 +1192,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
         );
         if (isInputDetection) {
           const detectedSess = extractSessionId(targetReq, req.headers as Record<string, unknown>) || '';
-          log.info(`[Proxy] ⚡ Instant mock resolution for input-detection model call (0ms) [model=${candidateNames[0] || 'input-detect'}${detectedSess ? ` session=${detectedSess}` : ''}]`);
+          log.info(`[Proxy] ? Instant mock resolution for input-detection model call (0ms) [model=${candidateNames[0] || 'input-detect'}${detectedSess ? ` session=${detectedSess}` : ''}]`);
           const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
           if (isStream) {
             if (safeWriteHead(res, 200, {
@@ -1334,7 +1334,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
             const timeSinceNative = Date.now() - activeNative!.lastSeen;
             if (timeSinceNative < NATIVE_CASCADE_BLOCK_WINDOW_MS) {
               log.warn(
-                `[Proxy] ⛔ Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey || convId || sessId || 'unknown'}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule: rejecting fallback to report original error directly.`
+                `[Proxy] ? Blocked automated Language Server fallback to [${requestedRaw}] on native session [${sessionKey || convId || sessId || 'unknown'}] (original model: [${activeNative!.originalModel}], within cascade window). Strict ZERO fallback rule: rejecting fallback to report original error directly.`
               );
               const err = activeNative!.lastError;
               if (err && err.body && err.body.length > 0) {
@@ -1417,7 +1417,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
                 const isNative = isNativeCloudCodeModel(explicitSelected.replace(/^models\//, ''));
                 if (isNative) {
                   log.info(
-                    `[Proxy] 🎯 User switched to native model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
+                    `[Proxy] ?? User switched to native model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
                   );
                   clearSessionModelFallback(sessionKey);
                 } else {
@@ -1425,7 +1425,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
                   const isOriginal = normExplicit === normalizeCloudCodeModelId(activeFallback.originalModel);
                   if (!isFallback && !isOriginal) {
                     log.info(
-                      `[Proxy] 🎯 User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
+                      `[Proxy] ?? User explicitly selected different model [${explicitSelected}]. Clearing active session fallback [${activeFallback.originalModel} -> ${activeFallback.fallbackModel}].`,
                     );
                     clearSessionModelFallback(sessionKey);
                   }
@@ -1488,7 +1488,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
           });
           if (matchesOrig) {
             log.info(
-              `[Proxy] 🔀 [Active Session Fallback] Seamlessly routing session ${sessionKey} to [${activeFallback.fallbackModel}] (primary [${activeFallback.originalModel}] in temporary fallback cooldown)`
+              `[Proxy] ?? [Active Session Fallback] Seamlessly routing session ${sessionKey} to [${activeFallback.fallbackModel}] (primary [${activeFallback.originalModel}] in temporary fallback cooldown)`
             );
             cleanRequested = activeFallback.fallbackModel;
           }
@@ -1520,14 +1520,14 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
               effectivePool = matchedPool.filter((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort));
             }
             if (effectivePool.length > 0) {
-              log.info(`[Proxy] 🌐 Routing native model [${requestedRaw}] through Google multi-account pool (${effectivePool.length} candidate(s))${inheritedEffort ? ` [Inherited Effort: ${inheritedEffort}]` : ''}.`);
+              log.info(`[Proxy] ?? Routing native model [${requestedRaw}] through Google multi-account pool (${effectivePool.length} candidate(s))${inheritedEffort ? ` [Inherited Effort: ${inheritedEffort}]` : ''}.`);
               matchingCandidates = effectivePool;
               isNativeRoutedToPool = true;
             } else {
-              log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+              log.info(`[Proxy] ? Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
             }
           } else {
-            log.info(`[Proxy] ⚡ Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+            log.info(`[Proxy] ? Native Antigravity model requested [${requestedRaw}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
           }
         } else {
           // Strictly prioritize the model matching cleanRequested (the directly requested model)
@@ -1610,7 +1610,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
         // Subagent Effort Governor: only clamp if AG_CLAMP_SUBAGENTS=1 is explicitly set
         // Disabled by default to strictly honor user-selected reasoning effort without quota throttling
         if (process.env.AG_CLAMP_SUBAGENTS === '1' && clampSubagentReasoning(targetReq)) {
-          log.info(`[Proxy] 🛡️ Subagent detected: clamped thinking budget to 2048 tokens to conserve quota`);
+          log.info(`[Proxy] ??? Subagent detected: clamped thinking budget to 2048 tokens to conserve quota`);
           contentsNormalized = true;
         }
 
@@ -1672,7 +1672,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
 
             const auxTag = isAuxiliaryReq ? ` [Auxiliary Task: ${auxiliaryType || 'BACKGROUND'}]` : '';
             log.info(
-              `[Proxy] 📥 [Incoming Request]${auxTag} Model requested: [${matchedCustomModel.displayName || matchedCustomModel.name}]${sessId ? ` (session: ${sessId})` : ''}`,
+              `[Proxy] ?? [Incoming Request]${auxTag} Model requested: [${matchedCustomModel.displayName || matchedCustomModel.name}]${sessId ? ` (session: ${sessId})` : ''}`,
             );
 
             // Resolve fileData URIs then route to translator
@@ -1747,10 +1747,10 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
           return mTarget === cleanMatched || (normMatched && normalizeCloudCodeModelId(mTarget) === normMatched);
         });
         if (matchedPool.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
-          log.info(`[Proxy] 🌐 Routing native model [${matchedModelName}] on direct URL through Google multi-account pool.`);
+          log.info(`[Proxy] ?? Routing native model [${matchedModelName}] on direct URL through Google multi-account pool.`);
           matchedCustomModel = selectBestModelByQuota(matchedPool, customModels);
         } else {
-          log.info(`[Proxy] ⚡ Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
+          log.info(`[Proxy] ? Native Antigravity model requested on direct URL [${matchedModelName}]. Bypassing multi-account pool and transparently proxying to Google. (Strict: NO fallback on failure/quota).`);
         }
       } else {
         let matchingCandidates = customModels.filter((m) =>
@@ -1851,7 +1851,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
     }
 
     // 5. Fallback: transparent proxy to Google
-    // Strip any Claude thinking blocks before forwarding — they carry account-specific HMAC
+    // Strip any Claude thinking blocks before forwarding � they carry account-specific HMAC
     // signatures that become invalid if the account differs from the one that generated them.
     let rawModelName = '';
     try {
@@ -1879,7 +1879,7 @@ export function handleRequest(req: http.IncomingMessage, res: http.ServerRespons
         rawModelName = rewrittenModel;
         fullBody = Buffer.from(JSON.stringify(fallbackJson), 'utf-8');
       }
-    } catch { /* not JSON — continue as-is */ }
+    } catch { /* not JSON � continue as-is */ }
 
     // Intercept unresolved placeholder models so internal placeholders never leak to Google upstream
     if (/MODEL_PLACEHOLDER_/i.test(rawModelName) || /MODEL_PLACEHOLDER_/i.test(req.url || '')) {

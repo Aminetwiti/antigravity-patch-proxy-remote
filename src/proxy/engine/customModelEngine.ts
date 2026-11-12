@@ -90,7 +90,7 @@ import {
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
 } from '../resilience/pools/googlePool';
-import { safeWriteHead, safeEnd, parseRetryAfter, proxyLog } from '../http/httpUtils';
+import { safeWriteHead, safeEnd, parseRetryAfter, proxyLog } from '../http/server/httpUtils';
 import { logTokenUsageEvent } from '../state/remoteState';
 import {
   generateGracefulMarkdown,

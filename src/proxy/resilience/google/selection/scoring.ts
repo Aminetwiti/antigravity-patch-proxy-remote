@@ -1,4 +1,4 @@
-﻿import type { CustomModel } from '../../../core/types';
+import type { CustomModel } from '../../../core/types';
 import {
   isGoogleCloudCodeModel,
   isGeminiCliModel,
@@ -9,7 +9,7 @@ import {
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
 } from '../../../../constants';
-import { getOpenBreaker } from '../../circuitBreaker';
+import { getOpenBreaker } from '../../circuit/circuitBreaker';
 import { getAccountQuotaKey } from '../identity/accountKeys';
 import { isAccountUnlicensed } from '../identity/licensing';
 import { isAccountInCooldown } from '../cooldown/cooldownRegistry';
@@ -204,7 +204,7 @@ export function isPoolUnderQuotaStress(accounts: CustomModel[], modelFamily?: st
   return avg < 15;
 }
 
-// ─── Multi-Project Balancing ──────────────────────────────────────────────────
+// --- Multi-Project Balancing --------------------------------------------------
 let multiProjectIndex = 0;
 
 export function resolveGoogleProjectId(candidate: CustomModel): string {
@@ -229,7 +229,7 @@ export function resolveGoogleProjectId(candidate: CustomModel): string {
   return 'bamboo-precept-lgxtn';
 }
 
-// ─── Google Account Dynamic Health Scoring ─────────────────────────────────────
+// --- Google Account Dynamic Health Scoring -------------------------------------
 export function getAccountDynamicScore(m: CustomModel, modelFamily?: string): number {
   if (isAccountInCooldown(m, modelFamily) || getOpenBreaker(m) || isTokenRevoked(m.refreshToken)) {
     return 0;

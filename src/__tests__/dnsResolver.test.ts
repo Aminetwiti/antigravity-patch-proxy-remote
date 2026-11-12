@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as dns from 'dns';
 import {
   isLoopbackIp,
@@ -10,7 +10,7 @@ import {
   clearDnsCache,
   invalidateCachedDns,
   DNS_QUERY_TIMEOUT_MS,
-} from '../proxy/http/dnsResolver';
+} from '../proxy/http/server/dnsResolver';
 
 // dns is heavily callback-based; we stub its methods per-test.
 vi.mock('dns', async () => {

@@ -1,8 +1,8 @@
-﻿import { randomInt } from 'crypto';
+import { randomInt } from 'crypto';
 import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import type { AccountLiveQuota } from '../../../../services/auth/googleAuth';
-import { getOpenBreaker } from '../../circuitBreaker';
+import { getOpenBreaker } from '../../circuit/circuitBreaker';
 import { triggerQuotaCachePersist, registerAccountCooldownHandlers } from '../../../../services/storage/quotaCacheStore';
 import { getAccountQuotaKey } from '../identity/accountKeys';
 import { isAccountUnlicensed } from '../identity/licensing';
@@ -179,7 +179,7 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
       const MAX_WEEKLY_MS = 7 * 24 * 3600_000 + 3600_000;
       const clampedUntil = durationMs > MAX_WEEKLY_MS ? now + 7 * 24 * 3600_000 : until;
       if (clampedUntil !== until) {
-        log.info(`[GooglePool] Clamped over-long cooldown for ${k}: ${Math.round(durationMs / 3600_000)}h → 168h (7-day max)`);
+        log.info(`[GooglePool] Clamped over-long cooldown for ${k}: ${Math.round(durationMs / 3600_000)}h ? 168h (7-day max)`);
       }
       googleAccountCooldowns.set(k, clampedUntil);
       if (durationMs >= 5 * 3600 * 1000) {

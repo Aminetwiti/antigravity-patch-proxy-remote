@@ -1,16 +1,16 @@
-﻿import * as http from 'http';
+import * as http from 'http';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import log from 'electron-log';
-import { LOOPBACK_HOSTS } from '../../constants';
-import { safeWriteHead, safeEnd } from './httpUtils';
-import { loadCustomModels, loadDisabledModelIds } from '../models/modelLoader';
-import { getFastOrCachedHealth } from '../resilience/pools/modelHealthChecker';
-import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from '../models/protoInjector';
+import { LOOPBACK_HOSTS } from '../../../constants';
+import { safeWriteHead, safeEnd } from '../server/httpUtils';
+import { loadCustomModels, loadDisabledModelIds } from '../../models/modelLoader';
+import { getFastOrCachedHealth } from '../../resilience/pools/modelHealthChecker';
+import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from '../../models/protoInjector';
 
-// ─── loadCodeAssist Cache (Login Resilience) ────────────────────────────────
+// --- loadCodeAssist Cache (Login Resilience) --------------------------------
 
 export let memoryLoadCodeAssistCache: string | null = null;
 export let memoryLoadCodeAssistTime = 0;
@@ -62,7 +62,7 @@ export function saveCachedCodeAssist(content: string): void {
   }
 }
 
-// ─── listExperiments Cache (Feature Flags & Planning Resilience) ────────────
+// --- listExperiments Cache (Feature Flags & Planning Resilience) ------------
 
 export let memoryListExperimentsCache: string | null = null;
 export let memoryListExperimentsTime = 0;
@@ -104,7 +104,7 @@ export function saveCachedExperiments(content: string): void {
   }
 }
 
-// ─── fetchAvailableModels Cache (Discovery & WaitForReady Resilience) ───────
+// --- fetchAvailableModels Cache (Discovery & WaitForReady Resilience) -------
 
 export let memoryFetchAvailableModelsCache: string | null = null;
 export let memoryFetchAvailableModelsTime = 0;
@@ -146,7 +146,7 @@ export function saveCachedAvailableModels(content: string): void {
   }
 }
 
-// ─── Telemetry RPC URL Detector ─────────────────────────────────────────────
+// --- Telemetry RPC URL Detector ---------------------------------------------
 
 export function isTelemetryRpcUrl(url: string | undefined): boolean {
   if (!url) return false;
@@ -159,7 +159,7 @@ export function isTelemetryRpcUrl(url: string | undefined): boolean {
   );
 }
 
-// ─── Experiments Payload Enricher ───────────────────────────────────────────
+// --- Experiments Payload Enricher -------------------------------------------
 
 export function enrichExperimentsPayload(rawBody: string): string {
   try {
@@ -287,7 +287,7 @@ export function enrichExperimentsPayload(rawBody: string): string {
   }
 }
 
-// ─── GetAvailableModels Proxy Handler ───────────────────────────────────────
+// --- GetAvailableModels Proxy Handler ---------------------------------------
 
 export function handleGetAvailableModelsProxy(
   res: http.ServerResponse,
@@ -398,7 +398,7 @@ export function handleGetAvailableModelsProxy(
   lsReq.end();
 }
 
-// ─── GetUserStatus Proxy Handler ─────────────────────────────────────────────
+// --- GetUserStatus Proxy Handler ---------------------------------------------
 
 export function handleGetUserStatusProxy(
   res: http.ServerResponse,

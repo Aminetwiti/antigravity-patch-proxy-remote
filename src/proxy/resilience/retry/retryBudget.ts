@@ -195,7 +195,7 @@ export class RetryBudget {
    * Used by `persistedState.ts` on startup.
    */
   applyPatch(
-    patch: Map<string, import('../state/persistedState').PersistedBudgetSample>,
+    patch: Map<string, import('../../state/persistedState').PersistedBudgetSample>,
   ): void {
     for (const [key, sample] of patch) {
       if (!sample) continue;
@@ -322,7 +322,7 @@ export function getRetryBudget(): RetryBudget {
  * during startup once the on-disk state file has been parsed.
  */
 export function applyRetryBudgetPatch(
-  patch: Map<string, import('../state/persistedState').PersistedBudgetSample>,
+  patch: Map<string, import('../../state/persistedState').PersistedBudgetSample>,
 ): void {
   getRetryBudget().applyPatch(patch);
 }

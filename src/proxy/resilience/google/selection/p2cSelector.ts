@@ -1,9 +1,9 @@
-﻿import { randomInt } from 'crypto';
+import { randomInt } from 'crypto';
 import type { CustomModel } from '../../../core/types';
 import { P2C_SCORE_DELTA } from '../../../../constants';
 import { isGoogleCloudCodeModel, normalizeCloudCodeModelId } from '../../../../services/auth/googleAuth';
 import { getBaseModelId } from '../../../core/urlBuilder';
-import { getOpenBreaker } from '../../circuitBreaker';
+import { getOpenBreaker } from '../../circuit/circuitBreaker';
 import { getAccountQuotaKey } from '../identity/accountKeys';
 import { isAccountUnlicensed, isAccountTrial } from '../identity/licensing';
 import { isAccountInCooldown } from '../cooldown/cooldownRegistry';

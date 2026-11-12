@@ -2,7 +2,7 @@ import log from 'electron-log';
 import type { FallbackParams } from './types';
 import { loadCustomModels } from '../../../../models/modelLoader';
 import { expandModelsWithEffort } from '../../../effortExpander';
-import { getOpenBreaker } from '../../../../resilience/circuitBreaker';
+import { getOpenBreaker } from '../../../../resilience/circuit/circuitBreaker';
 import { normalizeCloudCodeModelId } from '../../../../../services/auth/googleAuth';
 import { attemptCrossModelFallback } from './crossModelFallback';
 import { attemptExternalCascade } from './externalCascade';

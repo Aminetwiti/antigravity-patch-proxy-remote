@@ -1,6 +1,6 @@
 import type { CustomModel } from '../../../core/types';
 import { getAccountQuotaKey } from '../identity/accountKeys';
-import { getOpenBreaker } from '../../circuitBreaker';
+import { getOpenBreaker } from '../../circuit/circuitBreaker';
 import { isAccountInCooldown } from '../cooldown/cooldownRegistry';
 import { isAccountInProbation } from '../cooldown/probationRegistry';
 import { getModelQuotaScore } from '../selection/scoring';

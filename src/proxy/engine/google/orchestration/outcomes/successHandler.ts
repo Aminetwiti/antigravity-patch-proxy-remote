@@ -1,4 +1,4 @@
-﻿import log from 'electron-log';
+import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import type { PoolLoopState } from '../types';
 import {
@@ -8,9 +8,11 @@ import {
   getAccountQuotaKey,
   getModelQuotaScore,
   unmarkAccountUnlicensed,
-} from '../../../../resilience/pools/googlePool';
-import { recordSuccess } from '../../../../resilience/circuit/circuitBreaker';
-import { sessionAffinities, bindSessionToModel } from '../../../../resilience/pools/sessionAffinities';
+  isAccountInCooldown,
+  isAccountUnlicensed,
+} from '../../../../resilience/googlePool';
+import { recordSuccess } from '../../../../resilience/circuitBreaker';
+import { sessionAffinities, bindSessionToModel } from '../../../../resilience/sessionAffinities';
 
 export async function handleRequestSuccess(
   candidate: CustomModel,

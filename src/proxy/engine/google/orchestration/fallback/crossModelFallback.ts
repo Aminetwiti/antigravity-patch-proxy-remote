@@ -1,4 +1,4 @@
-import log from 'electron-log';
+﻿import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import type { FallbackParams } from './types';
 import {
@@ -14,20 +14,20 @@ import {
   getGoogleAccountPool,
   isAccountUnlicensed,
   isAccountInCooldown,
-} from '../../../../resilience/googlePool';
-import { getOpenBreaker } from '../../../../resilience/circuitBreaker';
+} from '../../../../resilience/pools/googlePool';
+import { getOpenBreaker } from '../../../../resilience/circuit/circuitBreaker';
 import {
   restoreThoughtSignatures,
   flattenAllToolCallsToText,
   sanitizeUnsignedToolCalls,
 } from '../../../../core/shared';
 import { writeSafeSseChunk, injectAntiHallucinationInstruction } from '../../../streamPipeline';
-import { safeWriteHead } from '../../../../http/httpUtils';
+import { safeWriteHead } from '../../../../http/server/httpUtils';
 import {
   getSessionModelFallback,
   setSessionModelFallback,
   clearSessionModelFallback,
-} from '../../../../resilience/sessionAffinities';
+} from '../../../../resilience/pools/sessionAffinities';
 
 export async function attemptCrossModelFallback(
   params: FallbackParams,

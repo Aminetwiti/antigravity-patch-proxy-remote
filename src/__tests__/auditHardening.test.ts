@@ -16,7 +16,7 @@ import {
   decrementAccountInFlight,
   MAX_CONCURRENT_PER_ACCOUNT,
 } from '../proxy/resilience/pools/googlePool';
-import { readBodyWithLimit } from '../proxy/http/bodyLimitGuard';
+import { readBodyWithLimit } from '../proxy/http/routes/bodyLimitGuard';
 import type { CustomModel } from '../proxy/core/types';
 import { EventEmitter } from 'events';
 import type * as http from 'http';
