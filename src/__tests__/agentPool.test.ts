@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+﻿import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as http from 'http';
 import * as https from 'https';
 import {
@@ -11,7 +11,7 @@ import {
   DEFAULT_MAX_SOCKETS,
   DEFAULT_MAX_FREE_SOCKETS,
   DEFAULT_FREE_SOCKET_TIMEOUT_MS,
-} from '../proxy/resilience/agentPool';
+} from '../proxy/resilience/pools/agentPool';
 
 describe('agentPool', () => {
   beforeEach(() => {

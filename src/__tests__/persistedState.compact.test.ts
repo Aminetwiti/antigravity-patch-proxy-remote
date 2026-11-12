@@ -1,12 +1,12 @@
-/**
+﻿/**
  * Tests for `persistedState.compact()` (Phase 7.2).
  * Pure: drops stale breaker/budget entries from a snapshot in memory.
  */
 
 import { describe, it, expect } from 'vitest';
 import { fresh, toFile, compact } from '../proxy/state/persistedState';
-import { CIRCUIT_BREAKER_RESET_MS } from '../proxy/resilience/circuitBreaker';
-import { RETRY_BUDGET_HALF_LIFE_MS } from '../proxy/resilience/retryBudget';
+import { CIRCUIT_BREAKER_RESET_MS } from '../proxy/resilience/circuit/circuitBreaker';
+import { RETRY_BUDGET_HALF_LIFE_MS } from '../proxy/resilience/retry/retryBudget';
 
 const NOW = 1_700_000_000_000;
 const OPTS = {

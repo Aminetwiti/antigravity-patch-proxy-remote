@@ -5,7 +5,7 @@ import {
   SERVER_ERROR_RETRY_BASE_DELAY_MS,
   RETRY_BACKOFF_MULTIPLIER,
   RETRY_BACKOFF_JITTER_FACTOR,
-} from '../../constants';
+} from '../../../constants';
 import { calculateBackoffDelay, type BackoffConfig } from './backoff';
 
 /**

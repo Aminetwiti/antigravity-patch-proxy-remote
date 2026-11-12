@@ -19,7 +19,7 @@ import { generateModelPlaceholderId } from './idGenerator';
 import log from 'electron-log';
 import type { CustomModel } from '../core/types';
 import { isRecentModel } from '../state/recentModelsStore';
-import { getCachedHealth, type ModelHealthResult } from '../resilience/modelHealthChecker';
+import { getCachedHealth, type ModelHealthResult } from '../resilience/pools/modelHealthChecker';
 import { expandModelsWithEffort } from '../engine/effortExpander';
 import { detectModelCapabilities, getCanonicalModelKey, isNativeCloudCodeModel } from './modelUtils';
 import { isObsoleteModel } from '../../constants';

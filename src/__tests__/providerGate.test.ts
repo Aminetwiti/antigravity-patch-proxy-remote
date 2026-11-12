@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the providerGate module.
  *
  * Verifies:
@@ -18,7 +18,7 @@ import {
   untrust,
   snapshot,
   _resetProviderGate,
-} from '../proxy/resilience/providerGate';
+} from '../proxy/resilience/circuit/providerGate';
 
 beforeEach(() => {
   _resetProviderGate();

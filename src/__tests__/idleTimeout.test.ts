@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
-import { IdleTimeoutError, IdleTimeoutGuard } from '../proxy/resilience/idleTimeout';
+import { IdleTimeoutError, IdleTimeoutGuard } from '../proxy/resilience/circuit/idleTimeout';
 
 /**
  * Fake timers + a tiny PassThrough-backed Readable give us deterministic

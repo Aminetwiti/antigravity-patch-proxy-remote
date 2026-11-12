@@ -1,9 +1,9 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel, GeminiRequestBody } from '../../../core/types';
 import { loadCustomModels } from '../../../models/modelLoader';
 import { expandModelsWithEffort } from '../../effortExpander';
-import { getOpenBreaker } from '../../../resilience/circuitBreaker';
+import { getOpenBreaker } from '../../../resilience/circuit/circuitBreaker';
 import { isProviderRateLimited } from '../../../models/modelRouter';
 import {
   normalizeCloudCodeModelId,
@@ -18,7 +18,7 @@ import {
   getGoogleAccountPool,
   isAccountUnlicensed,
   isAccountInCooldown,
-} from '../../../resilience/googlePool';
+} from '../../../resilience/pools/googlePool';
 import {
   restoreThoughtSignatures,
   flattenAllToolCallsToText,
@@ -33,7 +33,7 @@ import {
   getSessionModelFallback,
   setSessionModelFallback,
   clearSessionModelFallback,
-} from '../../../resilience/sessionAffinities';
+} from '../../../resilience/pools/sessionAffinities';
 import { handleCustomModelRequest } from '../../customModelEngine';
 
 export interface FallbackParams {

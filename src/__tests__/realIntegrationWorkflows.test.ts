@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Real End-to-End Integration Workflows (Desktop Proxy & Translators)
  *
  * Tests complete integration scenarios with concrete assertions on results & impacts:
@@ -30,7 +30,7 @@ import {
   recordFailure,
   recordSuccess,
   _resetAllBreakers,
-} from '../proxy/resilience/circuitBreaker';
+} from '../proxy/resilience/circuit/circuitBreaker';
 import { validateGenerateContentResponse } from '../schemaValidator';
 import { mapGeminiToAnthropic, mapAnthropicToGemini } from '../proxy/translators/anthropic';
 import { mapOpenAIChunkToGemini } from '../proxy/translators/openai';

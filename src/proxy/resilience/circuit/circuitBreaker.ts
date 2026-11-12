@@ -16,8 +16,8 @@
  * the first request through to re-probe upstream health.
  */
 
-import type { CustomModel } from '../core/types';
-import type { ErrorType } from './errorClassifier';
+import type { CustomModel } from '../../core/types';
+import type { ErrorType } from '../retry/errorClassifier';
 
 export interface CachedDiagnostic {
   /** Last error type observed (server, rate_limit, timeout, network, ...). */

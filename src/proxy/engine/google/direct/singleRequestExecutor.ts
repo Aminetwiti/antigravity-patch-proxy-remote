@@ -1,13 +1,13 @@
-import type http from 'http';
+﻿import type http from 'http';
 import https from 'https';
 import log from 'electron-log';
 import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from '../../../../metrics';
 import { GOOGLE_HOSTS, GOOGLE_PROXY_TIMEOUT_MS } from '../../../../constants';
 import type { CustomModel } from '../../../core/types';
-import { isRetryableNetworkError } from '../../../resilience/retryStrategy';
-import { getHttpsAgent, evictAgent } from '../../../resilience/agentPool';
+import { isRetryableNetworkError } from '../../../resilience/retry/retryStrategy';
+import { getHttpsAgent, evictAgent } from '../../../resilience/pools/agentPool';
 import { resolveGoogleIp, invalidateCachedDns } from '../../../http/dnsResolver';
-import { getAccountVirtualDeviceHeaders } from '../../../resilience/googlePool';
+import { getAccountVirtualDeviceHeaders } from '../../../resilience/pools/googlePool';
 import { safeWriteHead, proxyLog, newTraceId } from '../../../http/httpUtils';
 import type { ResponseClaimer } from '../../historyTrimmer';
 import { transformGoogleStreamForRemote } from '../../streamPipeline';

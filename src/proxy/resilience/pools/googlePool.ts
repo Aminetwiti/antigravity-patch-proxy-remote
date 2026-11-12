@@ -7,4 +7,4 @@
  * - ./google/selection (scoring, classifier 429, P2C selector, auto-heal, preflight probe, health interval)
  */
 
-export * from './google';
+export * from '../google';

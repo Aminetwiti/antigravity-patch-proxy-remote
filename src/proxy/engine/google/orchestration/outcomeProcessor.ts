@@ -1,4 +1,4 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import type { GoogleRequestOutcome } from '../direct/types';
@@ -19,8 +19,8 @@ import {
   markAccountUnlicensed,
   unmarkAccountUnlicensed,
   recordAccountLatency,
-} from '../../../resilience/googlePool';
-import { recordSuccess, recordFailure } from '../../../resilience/circuitBreaker';
+} from '../../../resilience/pools/googlePool';
+import { recordSuccess, recordFailure } from '../../../resilience/circuit/circuitBreaker';
 import {
   getLiveAccountQuota,
   updateLiveAccountQuota,
@@ -29,8 +29,8 @@ import {
   onboardUserAndAcceptTerms,
   type AccountLiveQuota,
 } from '../../../../services/auth/googleAuth';
-import { sessionAffinities, bindSessionToModel } from '../../../resilience/sessionAffinities';
-import { evictAgent } from '../../../resilience/agentPool';
+import { sessionAffinities, bindSessionToModel } from '../../../resilience/pools/sessionAffinities';
+import { evictAgent } from '../../../resilience/pools/agentPool';
 import { invalidateCachedDns } from '../../../http/dnsResolver';
 import { observe as metricObserve } from '../../../../metrics';
 import { trimContextPayload } from '../../contextTrimmer';

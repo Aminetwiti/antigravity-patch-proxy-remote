@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the diagnostics snapshot module.
  *
  * Asserts:
@@ -15,9 +15,9 @@ import {
   formatSnapshot,
   knownDefaultProviders,
 } from '../proxy/state/diagnostics';
-import { _resetProviderGate } from '../proxy/resilience/providerGate';
-import { _resetAllBreakers } from '../proxy/resilience/circuitBreaker';
-import { _resetRetryBudget } from '../proxy/resilience/retryBudget';
+import { _resetProviderGate } from '../proxy/resilience/circuit/providerGate';
+import { _resetAllBreakers } from '../proxy/resilience/circuit/circuitBreaker';
+import { _resetRetryBudget } from '../proxy/resilience/retry/retryBudget';
 
 describe('diagnostics / _buildSnapshot shape', () => {
   it('exposes the documented top-level keys', () => {

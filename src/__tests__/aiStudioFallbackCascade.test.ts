@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Google AI Studio Fallback Cascade Tests
  *
  * Covers the fix that allows google-gemini (AI Studio) accounts to be used
@@ -28,7 +28,7 @@ vi.mock('electron-log', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { getOpenBreaker, recordFailure, recordSuccess } from '../proxy/resilience/circuitBreaker';
+import { getOpenBreaker, recordFailure, recordSuccess } from '../proxy/resilience/circuit/circuitBreaker';
 import type { CustomModel } from '../proxy/core/types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

@@ -15,13 +15,13 @@ import {
 import * as registry from '../core/registry';
 import { loadCustomModels } from '../models/modelLoader';
 import { recordProviderUsage } from '../../customModelStore';
-import { classifyError, ErrorDiagnostic, type ErrorType } from '../resilience/errorClassifier';
-import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from '../resilience/retryStrategy';
-import { getOpenBreaker, recordFailure, recordSuccess } from '../resilience/circuitBreaker';
-import { IdleTimeoutGuard } from '../resilience/idleTimeout';
-import { resolveClientForUrl } from '../resilience/agentPool';
+import { classifyError, ErrorDiagnostic, type ErrorType } from '../resilience/retry/errorClassifier';
+import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from '../resilience/retry/retryStrategy';
+import { getOpenBreaker, recordFailure, recordSuccess } from '../resilience/circuit/circuitBreaker';
+import { IdleTimeoutGuard } from '../resilience/circuit/idleTimeout';
+import { resolveClientForUrl } from '../resilience/pools/agentPool';
 import { EmptyStreamGuard } from './emptyStream';
-import { getRetryBudget, RETRY_BUDGET_BASE } from '../resilience/retryBudget';
+import { getRetryBudget, RETRY_BUDGET_BASE } from '../resilience/retry/retryBudget';
 import {
   resolveProvider,
   resolveCustomModelUrl,
@@ -89,7 +89,7 @@ import {
   isAccountNearExhaustion,
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
-} from '../resilience/googlePool';
+} from '../resilience/pools/googlePool';
 import { safeWriteHead, safeEnd, parseRetryAfter, proxyLog } from '../http/httpUtils';
 import { logTokenUsageEvent } from '../state/remoteState';
 import {
@@ -771,8 +771,8 @@ export {
   isAccountNearExhaustion,
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
   PREVENTIVE_COOLDOWN_MS,
-} from '../resilience/googlePool';
-export type { Google429Category, Google429Decision } from '../resilience/googlePool';
+} from '../resilience/pools/googlePool';
+export type { Google429Category, Google429Decision } from '../resilience/pools/googlePool';
 
 
 import {
@@ -809,7 +809,7 @@ import {
   nativeSessions,
   latestNativeGlobalError,
   clearLatestNativeGlobalError,
-} from '../resilience/sessionAffinities';
+} from '../resilience/pools/sessionAffinities';
 
 export {
   extractSessionId,

@@ -1,4 +1,4 @@
-import type http from 'http';
+﻿import type http from 'http';
 import https from 'https';
 import * as zlib from 'zlib';
 import log from 'electron-log';
@@ -15,8 +15,8 @@ import {
   recordNativeSessionError,
   recordLatestNativeError,
   updateLatestNativeErrorBody,
-} from '../../../resilience/sessionAffinities';
-import { getHttpsAgent } from '../../../resilience/agentPool';
+} from '../../../resilience/pools/sessionAffinities';
+import { getHttpsAgent } from '../../../resilience/pools/agentPool';
 
 export async function proxyToGoogle(
   req: http.IncomingMessage,

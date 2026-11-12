@@ -1,4 +1,4 @@
-import log from 'electron-log';
+﻿import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import {
   isTokenRevoked,
@@ -17,9 +17,9 @@ import {
   selectCandidateP2C,
   waitForAccountSlot,
   MAX_CONCURRENT_PER_ACCOUNT,
-} from '../../../resilience/googlePool';
-import { getOpenBreaker } from '../../../resilience/circuitBreaker';
-import { sessionAffinities } from '../../../resilience/sessionAffinities';
+} from '../../../resilience/pools/googlePool';
+import { getOpenBreaker } from '../../../resilience/circuit/circuitBreaker';
+import { sessionAffinities } from '../../../resilience/pools/sessionAffinities';
 
 export function isAccountEligible(candidate: CustomModel): boolean {
   return !(

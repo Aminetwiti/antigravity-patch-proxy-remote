@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Google AI Studio — Production Phase & Difficult Scenarios Test Suite
  *
  * Verifies that:
@@ -40,7 +40,7 @@ import {
   recordFailure,
   recordSuccess,
   _resetAllBreakers,
-} from '../proxy/resilience/circuitBreaker';
+} from '../proxy/resilience/circuit/circuitBreaker';
 import {
   getTranslator,
   translateRequest,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * auditHardening.test.ts
  * Regression guard for the three failles critiques identified in the adversarial audit:
  *  1. parseProto / parseProtoRaw must never enter an infinite loop on truncated/malformed buffers.
@@ -15,7 +15,7 @@ import {
   incrementAccountInFlight,
   decrementAccountInFlight,
   MAX_CONCURRENT_PER_ACCOUNT,
-} from '../proxy/resilience/googlePool';
+} from '../proxy/resilience/pools/googlePool';
 import { readBodyWithLimit } from '../proxy/http/bodyLimitGuard';
 import type { CustomModel } from '../proxy/core/types';
 import { EventEmitter } from 'events';

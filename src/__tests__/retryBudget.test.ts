@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+﻿import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   RetryBudget,
   computeTrustScore,
@@ -8,7 +8,7 @@ import {
   RETRY_BUDGET_FLOOR,
   RETRY_BUDGET_BASE,
   RETRY_BUDGET_MAX_SAMPLES,
-} from '../proxy/resilience/retryBudget';
+} from '../proxy/resilience/retry/retryBudget';
 import type { CustomModel } from '../proxy/core/types';
 
 const makeModel = (over: Partial<CustomModel> = {}): CustomModel => ({

@@ -1,4 +1,4 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import type { GoogleRequestOutcome } from '../direct/types';
@@ -51,9 +51,9 @@ import {
   getSoonestAccountCooldownRemaining,
   MAX_CONCURRENT_PER_ACCOUNT,
   PREVENTIVE_QUOTA_THRESHOLD_PCT,
-} from '../../../resilience/googlePool';
-import { getOpenBreaker, recordFailure } from '../../../resilience/circuitBreaker';
-import { evictAgent } from '../../../resilience/agentPool';
+} from '../../../resilience/pools/googlePool';
+import { getOpenBreaker, recordFailure } from '../../../resilience/circuit/circuitBreaker';
+import { evictAgent } from '../../../resilience/pools/agentPool';
 import { invalidateCachedDns } from '../../../http/dnsResolver';
 import { safeWriteHead, safeEnd } from '../../../http/httpUtils';
 import {
@@ -62,8 +62,8 @@ import {
   sanitizeCandidatesInResponse,
   writeSafeSseChunk,
 } from '../../streamPipeline';
-import { sessionAffinities } from '../../../resilience/sessionAffinities';
-import { classifyError } from '../../../resilience/errorClassifier';
+import { sessionAffinities } from '../../../resilience/pools/sessionAffinities';
+import { classifyError } from '../../../resilience/retry/errorClassifier';
 import { GOOGLE_HOSTS, RATE_LIMIT_RELIEF_WAIT_MS } from '../../../../constants';
 
 export async function executeGoogleCloudCodeWithPool(

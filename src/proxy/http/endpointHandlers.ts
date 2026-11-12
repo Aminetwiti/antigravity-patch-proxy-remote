@@ -1,4 +1,4 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,7 +7,7 @@ import log from 'electron-log';
 import { LOOPBACK_HOSTS } from '../../constants';
 import { safeWriteHead, safeEnd } from './httpUtils';
 import { loadCustomModels, loadDisabledModelIds } from '../models/modelLoader';
-import { getFastOrCachedHealth } from '../resilience/modelHealthChecker';
+import { getFastOrCachedHealth } from '../resilience/pools/modelHealthChecker';
 import { injectCustomModelsIntoResponse, injectCustomModelsIntoUserStatus } from '../models/protoInjector';
 
 // ─── loadCodeAssist Cache (Login Resilience) ────────────────────────────────

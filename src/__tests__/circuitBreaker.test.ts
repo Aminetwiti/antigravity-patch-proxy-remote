@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getOpenBreaker,
   recordFailure,
   recordSuccess,
   _resetAllBreakers,
   CIRCUIT_BREAKER_RESET_MS,
-} from '../proxy/resilience/circuitBreaker';
+} from '../proxy/resilience/circuit/circuitBreaker';
 import type { CustomModel } from '../proxy/core/types';
 
 const baseModel: CustomModel = {

@@ -7,8 +7,8 @@
 import http from 'http';
 import https from 'https';
 import log from 'electron-log';
-import type { CustomModel } from '../core/types';
-import { HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_CACHE_TTL_MS } from '../../constants';
+import type { CustomModel } from '../../core/types';
+import { HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_CACHE_TTL_MS } from '../../../constants';
 
 export interface ModelHealthResult {
   status: 'healthy' | 'slow' | 'unhealthy' | 'cooldown';
@@ -225,7 +225,7 @@ export async function checkAllModelsHealth(models: CustomModel[]): Promise<Map<s
 }
 
 // Background auto-refresh to pre-warm cache and keep it fresh
-import { loadCustomModels } from '../models/modelLoader';
+import { loadCustomModels } from '../../models/modelLoader';
 if (HEALTH_CHECK_INTERVAL_MS > 0) {
   setInterval(() => {
     const models = loadCustomModels();

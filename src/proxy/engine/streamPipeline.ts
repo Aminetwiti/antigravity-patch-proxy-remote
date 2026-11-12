@@ -7,9 +7,9 @@ import { StringDecoder } from 'string_decoder';
 import log from 'electron-log';
 import { STREAM_IDLE_TIMEOUT_MS } from '../../constants';
 import { safeWriteHead, safeEnd } from '../http/httpUtils';
-import { IdleTimeoutGuard } from '../resilience/idleTimeout';
+import { IdleTimeoutGuard } from '../resilience/circuit/idleTimeout';
 import { extractAndCacheThoughtSignatures, ANTI_HALLUCINATION_TOOL_INSTRUCTION } from '../core/shared';
-import { classifyError, ErrorDiagnostic, ErrorType } from '../resilience/errorClassifier';
+import { classifyError, ErrorDiagnostic, ErrorType } from '../resilience/retry/errorClassifier';
 import type { CustomModel } from '../core/types';
 import { logTokenUsageEvent } from '../state/remoteState';
 

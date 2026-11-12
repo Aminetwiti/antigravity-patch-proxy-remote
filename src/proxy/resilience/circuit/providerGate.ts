@@ -32,7 +32,7 @@
  * cached extension list. The default whitelist is a frozen module export.
  */
 
-import { WELL_KNOWN_PRESETS } from '../../presets';
+import { WELL_KNOWN_PRESETS } from '../../../presets';
 
 /**
  * Default list of provider ids we ship trusted out of the box.

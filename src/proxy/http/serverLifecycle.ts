@@ -19,15 +19,15 @@ import { invalidateModelStoreCache } from '../../services/storage/modelStore';
 import {
   invalidateHealthCache,
   checkAllModelsHealth,
-} from '../resilience/modelHealthChecker';
-import { clearSessionAffinities } from '../resilience/sessionAffinities';
+} from '../resilience/pools/modelHealthChecker';
+import { clearSessionAffinities } from '../resilience/pools/sessionAffinities';
 import {
   getAccountQuotaKey,
   verifyAndReconcileCooldowns,
   autoHealAccountOnQuotaRecovery,
   startPreflightHealthCheckInterval,
   stopPreflightHealthCheckInterval,
-} from '../resilience/googlePool';
+} from '../resilience/pools/googlePool';
 import {
   updateLiveAccountQuota,
   prewarmGoogleAccounts,
@@ -45,9 +45,9 @@ import {
   gather as gatherPersisted,
   flush as flushPersisted,
 } from '../state/persistedState';
-import { CIRCUIT_BREAKER_RESET_MS } from '../resilience/circuitBreaker';
+import { CIRCUIT_BREAKER_RESET_MS } from '../resilience/circuit/circuitBreaker';
 import { restoreRecentModels } from '../state/recentModelsStore';
-import { disposeAll as disposeAgentPool, warmTlsConnection } from '../resilience/agentPool';
+import { disposeAll as disposeAgentPool, warmTlsConnection } from '../resilience/pools/agentPool';
 
 let server: http.Server | null = null;
 let proxyPort = 0;

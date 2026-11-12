@@ -18,7 +18,7 @@ import { snapshot as diagnosticsSnapshot, formatSnapshot as diagnosticsFormat } 
 import { metricsEnabled, getMetricsSnapshot, formatPrometheus, negotiateContentType } from './metricsRoute';
 import { loadCustomModels } from '../models/modelLoader';
 import { generateModelPlaceholderId } from '../models/idGenerator';
-import { getOpenBreaker } from '../resilience/circuitBreaker';
+import { getOpenBreaker } from '../resilience/circuit/circuitBreaker';
 import {
   isGoogleCloudCodeModel,
   getLiveAccountQuota,
@@ -38,7 +38,7 @@ import {
   getAccountCooldownRemaining,
   MAX_CONCURRENT_PER_ACCOUNT,
   autoHealAccountOnQuotaRecovery,
-} from '../resilience/googlePool';
+} from '../resilience/pools/googlePool';
 
 export function handleInternalApiRoute(
   req: http.IncomingMessage,

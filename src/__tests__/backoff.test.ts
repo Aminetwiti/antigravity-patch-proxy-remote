@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { calculateBackoffDelay, type BackoffConfig } from '../proxy/resilience/backoff';
+﻿import { describe, it, expect } from 'vitest';
+import { calculateBackoffDelay, type BackoffConfig } from '../proxy/resilience/retry/backoff';
 
 const baseConfig: BackoffConfig = {
   initialDelayMs: 1_000,

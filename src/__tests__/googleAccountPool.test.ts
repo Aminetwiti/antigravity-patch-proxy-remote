@@ -66,7 +66,7 @@ import {
   verifyAndReconcileCooldowns,
   _resetAllAccountCooldowns,
 } from '../proxy';
-import { recordFailure, recordSuccess, getOpenBreaker } from '../proxy/resilience/circuitBreaker';
+import { recordFailure, recordSuccess, getOpenBreaker } from '../proxy/resilience/circuit/circuitBreaker';
 import {
   isTokenCached,
   prewarmGoogleAccounts,

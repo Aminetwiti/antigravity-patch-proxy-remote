@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Runtime diagnostics snapshot.
  *
  * ─────────────────────────────────────────────────────────────────────────────
@@ -38,13 +38,13 @@
 
 import { createHash } from 'crypto';
 import { DEFAULT_MAX_RETRIES } from '../../constants';
-import { getRetryBudget } from '../resilience/retryBudget';
-import { snapshotBreakers } from '../resilience/circuitBreaker';
+import { getRetryBudget } from '../resilience/retry/retryBudget';
+import { snapshotBreakers } from '../resilience/circuit/circuitBreaker';
 import { loadCustomModels } from '../models/modelLoader';
 import {
   DEFAULT_TRUSTED_PROVIDERS,
   snapshot as gateSnapshot,
-} from '../resilience/providerGate';
+} from '../resilience/circuit/providerGate';
 
 const moduleLoadTime = Date.now();
 

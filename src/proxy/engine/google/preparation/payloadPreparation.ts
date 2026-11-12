@@ -1,4 +1,4 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel, GeminiRequestBody } from '../../../core/types';
 import { trimContextPayload } from '../../contextTrimmer';
@@ -15,8 +15,8 @@ import {
   isPoolUnderQuotaStress,
   isAccountInCooldown,
   resolveGoogleProjectId,
-} from '../../../resilience/googlePool';
-import { getOpenBreaker } from '../../../resilience/circuitBreaker';
+} from '../../../resilience/pools/googlePool';
+import { getOpenBreaker } from '../../../resilience/circuit/circuitBreaker';
 
 /**
  * Wraps flat Gemini request (contents at root) inside reqJson.request if needed

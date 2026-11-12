@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Preload script — runs in every BrowserWindow before the page loads.
  * Exposes a minimal, secure API via contextBridge so the renderer can
  * communicate with the main-process auto-updater without nodeIntegration.
@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { webFrame } from 'electron';
 import { generateModelPlaceholderId, toSlug } from './proxy/models/idGenerator';
-import { classifyError } from './proxy/resilience/errorClassifier';
+import { classifyError } from './proxy/resilience/retry/errorClassifier';
 import { createLogger } from './shared/logger';
 import { registerApiBridge, storageAPI } from './preload/api';
 

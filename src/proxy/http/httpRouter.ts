@@ -21,7 +21,7 @@ import {
   isConvCorruptedSignatures,
 } from '../core/shared';
 import { loadCustomModels } from '../models/modelLoader';
-import { getOpenBreaker } from '../resilience/circuitBreaker';
+import { getOpenBreaker } from '../resilience/circuit/circuitBreaker';
 import { handleInternalApiRoute } from './internalApiRoutes';
 import { getBaseModelId } from '../core/urlBuilder';
 import { generateModelPlaceholderId, toSlug } from '../models/idGenerator';
@@ -33,7 +33,7 @@ import {
   matchesCustomModel,
 } from '../models/modelUtils';
 import { resolveGoogleIp } from './dnsResolver';
-import { checkAllModelsHealth } from '../resilience/modelHealthChecker';
+import { checkAllModelsHealth } from '../resilience/pools/modelHealthChecker';
 import { mcpListServers, mcpCallTool } from './mcpRelay';
 import {
   normalizeCloudCodeModelId,
@@ -42,7 +42,7 @@ import {
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
 } from '../../services/auth/googleAuth';
-import { selectBestModelByQuota, getGoogleAccountPool } from '../resilience/googlePool';
+import { selectBestModelByQuota, getGoogleAccountPool } from '../resilience/pools/googlePool';
 import { safeWriteHead, safeEnd, isAllowedOrigin, proxyLog } from './httpUtils';
 import { resolveFileData } from '../engine/historyTrimmer';
 import {
@@ -81,7 +81,7 @@ import {
   getSessionEffortAffinity,
   getSessionBoundModel,
   bindSessionToModel,
-} from '../resilience/sessionAffinities';
+} from '../resilience/pools/sessionAffinities';
 import { proxyToGoogle, executeGoogleCloudCodeWithPool } from '../engine/googleCloudEngine';
 import { handleCustomModelRequest } from '../engine/customModelEngine';
 

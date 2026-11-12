@@ -1,6 +1,6 @@
 ﻿import { describe, it, expect } from 'vitest';
 import { isGoogleCloudCodeModel } from '../services/auth/googleAuth';
-import { getModelQuotaScore } from '../proxy/resilience/googlePool';
+import { getModelQuotaScore } from '../proxy/resilience/pools/googlePool';
 
 describe('Google API Hardening (Forum Findings Parity)', () => {
   describe('AQ-prefixed Google AI Studio Authorization Keys', () => {
@@ -98,7 +98,7 @@ describe('Google API Hardening (Forum Findings Parity)', () => {
 
   describe('Speculative TLS Pre-Warming & Fast SSE Parsing', () => {
     it('warmTlsConnection executes safely without unhandled rejections', async () => {
-      const { warmTlsConnection } = await import('../proxy/resilience/agentPool');
+      const { warmTlsConnection } = await import('../proxy/resilience/pools/agentPool');
       expect(() => {
         warmTlsConnection('daily-cloudcode-pa.googleapis.com');
         warmTlsConnection('generativelanguage.googleapis.com');

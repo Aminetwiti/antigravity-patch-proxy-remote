@@ -1,4 +1,4 @@
-import {
+﻿import {
   setupCustomModelsWatcher,
   stopCustomModelsWatcher,
   startQuotaPollingInterval,
@@ -54,8 +54,8 @@ export type { RetryDispatch, StreamRequestCtx } from './proxy/engine/customModel
 import type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse } from './proxy/core/types';
 export type { CustomModel, GeminiRequestBody, GeminiCandidate, CloudCodeResponse };
 
-export * from './proxy/resilience/googlePool';
-export * from './proxy/resilience/sessionAffinities';
+export * from './proxy/resilience/pools/googlePool';
+export * from './proxy/resilience/pools/sessionAffinities';
 
 // ─── Utilities & State Re-exports (Backwards Compatibility) ────────────────
 

@@ -6,7 +6,7 @@ import {
   extractSyntheticToolContent,
   SYNTHETIC_TOOL_NAME,
 } from '../services/auth/googleAuth';
-import { parseDurationMs, parseRetryDelayFromError } from '../proxy/resilience/retryStrategy';
+import { parseDurationMs, parseRetryDelayFromError } from '../proxy/resilience/retry/retryStrategy';
 
 describe('gcli2api Inspired Enhancements', () => {
   describe('Recommendation 2: Tool JSON Schema Sanitization', () => {

@@ -1,10 +1,10 @@
 import * as http from 'http';
 import log from 'electron-log';
-import type { CustomModel } from '../core/types';
-import { getBaseModelId } from '../core/urlBuilder';
-import { isNativeCloudCodeModel } from '../models/modelUtils';
+import type { CustomModel } from '../../core/types';
+import { getBaseModelId } from '../../core/urlBuilder';
+import { isNativeCloudCodeModel } from '../../models/modelUtils';
 import { getAccountQuotaKey, isAccountUnlicensed, isAccountInCooldown, getModelQuotaScore } from './googlePool';
-import { getOpenBreaker } from './circuitBreaker';
+import { getOpenBreaker } from '../circuit/circuitBreaker';
 
 // ─── TTL Constants ──────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import type * as http from 'http';
+﻿import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import type { GoogleRequestOutcome } from '../direct/types';
@@ -18,8 +18,8 @@ import {
   unmarkAccountUnlicensed,
   setAccountCooldown,
   resolveGoogleProjectId,
-} from '../../../resilience/googlePool';
-import { recordSuccess } from '../../../resilience/circuitBreaker';
+} from '../../../resilience/pools/googlePool';
+import { recordSuccess } from '../../../resilience/circuit/circuitBreaker';
 import { GOOGLE_HOSTS, HEDGED_REQUEST_DELAY_MS } from '../../../../constants';
 
 export interface HedgedDispatchParams {

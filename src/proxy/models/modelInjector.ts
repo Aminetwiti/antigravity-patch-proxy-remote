@@ -1,8 +1,8 @@
-import log from 'electron-log';
+﻿import log from 'electron-log';
 import { loadCustomModels } from './modelLoader';
 import { detectModelCapabilities, getCanonicalModelKey } from './modelUtils';
 import { generateModelPlaceholderId, toSlug } from './idGenerator';
-import { getCachedHealth, ModelHealthResult } from '../resilience/modelHealthChecker';
+import { getCachedHealth, ModelHealthResult } from '../resilience/pools/modelHealthChecker';
 import { isRecentModel } from '../state/recentModelsStore';
 import type { CustomModel } from '../core/types';
 import { expandModelsWithEffort } from '../engine/effortExpander';

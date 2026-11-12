@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/mock/home' },
@@ -22,7 +22,7 @@ vi.mock('electron-log', () => ({
   },
 }));
 
-import { invalidateHealthCache, getCachedHealth } from '../proxy/resilience/modelHealthChecker';
+import { invalidateHealthCache, getCachedHealth } from '../proxy/resilience/pools/modelHealthChecker';
 import { injectCustomModelsIntoResponse } from '../proxy/models/protoInjector';
 import { setupCustomModelsWatcher, stopCustomModelsWatcher } from '../proxy';
 import type { CustomModel } from '../proxy/core/types';
@@ -43,7 +43,7 @@ describe('Live Model Synchronization & Cache Invalidation', () => {
   });
 
   it('should deduplicate concurrent in-flight pings to the same endpoint', async () => {
-    const { pingCustomModel } = await import('../proxy/resilience/modelHealthChecker');
+    const { pingCustomModel } = await import('../proxy/resilience/pools/modelHealthChecker');
     const m1: CustomModel = {
       name: 'models/dedup-1',
       displayName: 'Dedup 1',

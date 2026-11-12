@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Persisted proxy state.
  *
  * ──────────────────────────────────────────────────────────────────────────
@@ -62,9 +62,9 @@
 
 import { renameSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { dirname } from 'path';
-import type { ErrorType } from '../resilience/errorClassifier';
-import { CIRCUIT_BREAKER_RESET_MS, circuitBreaker, type CachedDiagnostic } from '../resilience/circuitBreaker';
-import { keyOf, RETRY_BUDGET_HALF_LIFE_MS } from '../resilience/retryBudget';
+import type { ErrorType } from '../resilience/retry/errorClassifier';
+import { CIRCUIT_BREAKER_RESET_MS, circuitBreaker, type CachedDiagnostic } from '../resilience/circuit/circuitBreaker';
+import { keyOf, RETRY_BUDGET_HALF_LIFE_MS } from '../resilience/retry/retryBudget';
 
 /**
  * Minimum interval between two `flush()` calls. Stops bursty
@@ -424,11 +424,11 @@ function quarantineCorrupt(path: string): void {
 import {
   applyRetryBudgetPatch,
   rawRetryBudgetCounts,
-} from '../resilience/retryBudget';
+} from '../resilience/retry/retryBudget';
 import {
   applyBreakerPatch as _applyBreakerPatch,
   snapshotBreakers as _snapshotBreakers,
-} from '../resilience/circuitBreaker';
+} from '../resilience/circuit/circuitBreaker';
 
 /**
  * Apply a retry-budget patch produced by `fromFile`.

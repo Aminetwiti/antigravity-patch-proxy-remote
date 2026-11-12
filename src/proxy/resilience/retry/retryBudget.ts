@@ -55,7 +55,7 @@
  *   const retries = getRetryBudget().getMaxRetries(model, 3);
  */
 
-import type { CustomModel } from '../core/types';
+import type { CustomModel } from '../../core/types';
 
 export const RETRY_BUDGET_BASE = 3;
 export const RETRY_BUDGET_FLOOR = 1;

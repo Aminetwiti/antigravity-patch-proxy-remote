@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the persistedState module.
  *
  * Coverage:
@@ -30,8 +30,8 @@ import {
   STATE_FILE_NAME,
   _resetFlushThrottle,
 } from '../proxy/state/persistedState';
-import { _resetAllBreakers } from '../proxy/resilience/circuitBreaker';
-import { _resetRetryBudget } from '../proxy/resilience/retryBudget';
+import { _resetAllBreakers } from '../proxy/resilience/circuit/circuitBreaker';
+import { _resetRetryBudget } from '../proxy/resilience/retry/retryBudget';
 
 function tmpDir(): string {
   return mkdtempSync(join(tmpdir(), 'p6-pstate-'));
