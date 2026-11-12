@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+﻿import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -20,7 +20,7 @@ import {
   registerUnlicensedAccountsHandlers,
   registerAccountCooldownHandlers,
   _clearQuotaPersistTimersForTests,
-} from '../services/quotaCacheStore';
+} from '../services/storage/quotaCacheStore';
 
 import {
   updateLiveAccountQuota,
@@ -31,7 +31,7 @@ import {
   isTokenRevoked,
   clearRevokedTokens,
   getAllRevokedTokens,
-} from '../services/googleAuth';
+} from '../services/auth/googleAuth';
 
 describe('Persistent Quota & Quarantine Cache Store', () => {
   const testDir = path.join(os.tmpdir(), `quota-cache-test-${Date.now()}`);

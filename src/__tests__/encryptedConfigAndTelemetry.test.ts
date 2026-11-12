@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Unit & Integration Tests for Telemetry Store & AES-256-GCM Encrypted Config Exchange
  */
 
 import { describe, it, expect } from 'vitest';
-import { telemetryStore } from '../services/telemetryStore';
-import { exportEncryptedConfig, importEncryptedConfig } from '../services/configExchange';
+import { telemetryStore } from '../services/telemetry/telemetryStore';
+import { exportEncryptedConfig, importEncryptedConfig } from '../services/security/configExchange';
 import type { ProviderFileEntry } from '../preload/types';
 
 describe('Telemetry & Metrics Store', () => {

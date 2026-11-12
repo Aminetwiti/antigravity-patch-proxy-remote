@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   exportProvidersToBase64,
   parseProvidersFromBase64,
   mergeProviderConfigs,
   exportEncryptedConfig,
   importEncryptedConfig,
-} from '../services/configExchange';
+} from '../services/security/configExchange';
 import type { ProviderFileEntry } from '../customModelStore';
 
 const mockProviders: ProviderFileEntry[] = [

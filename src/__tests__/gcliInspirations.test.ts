@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   cleanToolParametersJsonSchema,
   sanitizeCloudCodeTools,
   applyAntiTruncation,
   extractSyntheticToolContent,
   SYNTHETIC_TOOL_NAME,
-} from '../services/googleAuth';
+} from '../services/auth/googleAuth';
 import { parseDurationMs, parseRetryDelayFromError } from '../proxy/resilience/retryStrategy';
 
 describe('gcli2api Inspired Enhancements', () => {

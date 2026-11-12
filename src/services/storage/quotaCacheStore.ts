@@ -15,7 +15,7 @@ import {
   markTokenRevoked,
   onQuotaOrTokenChange,
   AccountLiveQuota,
-} from '../googleAuth';
+} from '../auth/googleAuth';
 
 export interface PersistentQuotaCacheData {
   version: number;

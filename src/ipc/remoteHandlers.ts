@@ -1,10 +1,10 @@
-import { ipcMain } from 'electron';
+﻿import { ipcMain } from 'electron';
 import * as http from 'http';
 import * as https from 'https';
 import * as path from 'path';
 import log from 'electron-log/main';
 import { DEFAULT_REMOTE_HOST, DEFAULT_REMOTE_TOKEN } from '../constants';
-import { atomicWriteJson, withWriteLock } from '../services/modelStore';
+import { atomicWriteJson, withWriteLock } from '../services/storage/modelStore';
 import { isPrivateOrLoopbackHost, isStrictLoopbackHost } from './connectionHandlers';
 import { IPC_CHANNELS } from './channels';
 

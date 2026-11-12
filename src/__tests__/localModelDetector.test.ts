@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+﻿import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as http from 'http';
 import {
   detectOllama,
   detectLMStudio,
   detectAllLocalRunners,
-} from '../services/localModelDetector';
+} from '../services/discovery/localModelDetector';
 
 describe('localModelDetector', () => {
   let ollamaServer: http.Server;

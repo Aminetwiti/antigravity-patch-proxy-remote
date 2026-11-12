@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -10,7 +10,7 @@ import {
   stripProtobufField,
   encodeVarint,
   readVarint,
-} from '../services/summaryReconciler';
+} from '../services/reconciliation/summaryReconciler';
 
 describe('summaryReconciler', () => {
   let tempDir: string;

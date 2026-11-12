@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import EventEmitter from 'events';
 import https from 'https';
 
@@ -15,8 +15,8 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-vi.mock('../services/googleAuth', async () => {
-  const actual = await vi.importActual<any>('../services/googleAuth');
+vi.mock('../services/auth/googleAuth', async () => {
+  const actual = await vi.importActual<any>('../services/auth/googleAuth');
   return {
     ...actual,
     getValidGoogleAccessToken: vi.fn().mockImplementation(async (acc) => {

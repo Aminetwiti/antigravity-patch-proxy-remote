@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unit Test Suite for Pillars 1, 2, 3, and 4
  * Verifies Real-time Stats, Health Probe Service, Encrypted Box Export/Import, and Traffic Replay & Diff.
  */
@@ -18,13 +18,13 @@ vi.mock('electron-log/main', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('../services/modelStore', () => ({
+vi.mock('../services/storage/modelStore', () => ({
   testModelConnection: vi.fn(async () => ({ success: false, error: 'Connection failed' })),
 }));
 
 import { trackTokenUsage, getRealtimeStats, reset as resetMetrics } from '../metrics';
-import { HealthProbeService } from '../services/healthProbe';
-import { exportAgBoxPackage, importAgBoxPackage } from '../services/cryptoStore';
+import { HealthProbeService } from '../services/discovery/healthProbe';
+import { exportAgBoxPackage, importAgBoxPackage } from '../services/security/cryptoStore';
 import { TrafficInspectorEngine } from '../../ag-doctor-ui/src/renderer/services/monitoring/traffic-inspector';
 
 describe('Pillar 1: Real-time Telemetry & Token Stats', () => {

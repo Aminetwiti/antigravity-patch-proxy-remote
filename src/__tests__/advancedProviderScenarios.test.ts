@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Advanced Provider & Model Sync Test Scenarios
  *
  * Tests:
@@ -31,7 +31,7 @@ vi.mock('../cryptoStore', () => ({
   decryptString: vi.fn((str: string) => (str.startsWith('enc:') ? str.slice(4) : str)),
 }));
 
-import { maskApiKey, isMaskedApiKey } from '../services/modelStore';
+import { maskApiKey, isMaskedApiKey } from '../services/storage/modelStore';
 import type { ProviderFileEntry, ProviderModelEntry } from '../preload/types';
 
 describe('Advanced Scenarios — Model Fetching & User Preference Preservation', () => {

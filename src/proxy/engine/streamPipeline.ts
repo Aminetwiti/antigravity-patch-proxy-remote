@@ -1,4 +1,4 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import * as zlib from 'zlib';
 import * as path from 'path';
 import * as os from 'os';
@@ -310,7 +310,7 @@ export function extractAllPseudoToolCalls(text: string): Array<{ fnName: string;
   return results;
 }
 
-import { SYNTHETIC_TOOL_NAME } from '../../services/googleAuth';
+import { SYNTHETIC_TOOL_NAME } from '../../services/auth/googleAuth';
 
 // ─── Candidate Sanitization & Crash Protection ──────────────────────────────
 

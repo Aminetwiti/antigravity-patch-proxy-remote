@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   normalizeCloudCodeModelId,
   isGoogleCloudCodeModel,
@@ -19,7 +19,7 @@ import {
   clearRevokedTokens,
   refreshGoogleToken,
   isAccountEntitledToClaude55,
-} from '../services/googleAuth';
+} from '../services/auth/googleAuth';
 
 describe('googleAuth service', () => {
   describe('normalizeCloudCodeModelId', () => {

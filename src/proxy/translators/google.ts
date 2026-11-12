@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Google AI Studio Translator.
  *
  * Google AI Studio speaks Gemini format natively, so request/response
@@ -24,7 +24,7 @@ interface GeminiStreamChunk {
 }
 
 // ─── Model Normalization ──────────────────────────────────────────────────
-import { normalizeGoogleModelId, sanitizeCloudCodeGenerationConfig } from '../../services/googleAuth';
+import { normalizeGoogleModelId, sanitizeCloudCodeGenerationConfig } from '../../services/auth/googleAuth';
 export { normalizeGoogleModelId };
 
 /**

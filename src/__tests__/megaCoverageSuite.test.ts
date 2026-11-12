@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Mega Coverage Test Suite — 300 Additional Unit Tests
  * Systematically tests Error Classification, Reset Time Parsing, Schema Validation,
  * API Key Masking, CLI Command Translation, and Exponential Backoff.
@@ -28,7 +28,7 @@ import {
   validateCloudCodeEnvelope,
   validateCustomModel,
 } from '../schemaValidator';
-import { maskApiKey, isMaskedApiKey } from '../services/modelStore';
+import { maskApiKey, isMaskedApiKey } from '../services/storage/modelStore';
 import { translateToolCallToNative, formatTranslatedResponse } from '../proxy/translators/utils';
 import { calculateBackoffDelay } from '../proxy/resilience/backoff';
 import { isRetryableStatus, isRetryableNetworkError } from '../proxy/resilience/retryStrategy';

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import http from 'http';
 import https from 'https';
 import { EventEmitter } from 'events';
@@ -40,7 +40,7 @@ import {
 import { isModelOrLabelDisabled } from '../proxy/models/protoInjector';
 import { expandModelsWithEffort } from '../proxy/engine/effortExpander';
 import { generateModelPlaceholderId } from '../proxy/models/idGenerator';
-import { normalizeCloudCodeModelId } from '../services/googleAuth';
+import { normalizeCloudCodeModelId } from '../services/auth/googleAuth';
 import type { CustomModel } from '../proxy/core/types';
 
 describe('Strict Zero Fallback on Native Models', () => {

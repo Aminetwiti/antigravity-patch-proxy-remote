@@ -1,4 +1,4 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -41,7 +41,7 @@ import {
   isGoogleCloudCodeModel,
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
-} from '../../services/googleAuth';
+} from '../../services/auth/googleAuth';
 import { selectBestModelByQuota, getGoogleAccountPool } from '../resilience/googlePool';
 import { safeWriteHead, safeEnd, isAllowedOrigin, proxyLog } from './httpUtils';
 import { resolveFileData } from '../engine/historyTrimmer';

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   isGeminiCliModel,
   isGoogleCloudCodeModel,
@@ -7,7 +7,7 @@ import {
   refreshGoogleToken,
   isTokenRevoked,
   clearRevokedTokens,
-} from '../services/googleAuth';
+} from '../services/auth/googleAuth';
 import {
   getGoogleAccountPool,
   getAccountQuotaKey,

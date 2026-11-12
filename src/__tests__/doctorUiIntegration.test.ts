@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Doctor UI Integration & Functionality Tests
  *
  * Tests:
@@ -12,7 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PROVIDERS, DETAILED_PROVIDER_PRESETS } from '../constants';
-import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../services/configExchange';
+import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../services/security/configExchange';
 import { getProviderColor, prefersReducedMotion } from '../preload/model-fetcher';
 import { PROVIDER_PRESETS } from '../preload/types';
 import type { ProviderFileEntry, ProviderModelEntry } from '../preload/types';

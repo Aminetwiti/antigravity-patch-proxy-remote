@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { CustomModel } from '../proxy/core/types';
 
 // Import directly from the new module (not via proxy.ts re-exports)
@@ -46,7 +46,7 @@ import {
   isAccountTrial,
   clearAccountQuotaExhaustedFromDisk,
 } from '../proxy/resilience/googlePool';
-import { updateLiveAccountQuota, _clearLiveQuotasForTests, normalizeCloudCodeModelId } from '../services/googleAuth';
+import { updateLiveAccountQuota, _clearLiveQuotasForTests, normalizeCloudCodeModelId } from '../services/auth/googleAuth';
 import { detectAndMitigateToolLoops } from '../proxy/core/shared';
 import { GOOGLE_POOL_HEADER_TIMEOUT_MS, GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS, P2C_SCORE_DELTA } from '../constants';
 

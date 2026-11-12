@@ -1,9 +1,9 @@
-import { describe, it } from 'vitest';
+﻿import { describe, it } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import https from 'https';
-import { refreshGoogleToken } from '../services/googleAuth';
+import { refreshGoogleToken } from '../services/auth/googleAuth';
 
 describe.skipIf(!process.env.LIVE_GOOGLE_TEST)('headers test', () => {
   it('checks response headers from cloudcode-pa on 429', async () => {

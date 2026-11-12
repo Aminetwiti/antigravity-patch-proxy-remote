@@ -1,4 +1,4 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -25,7 +25,7 @@ import {
   pollAllGoogleQuotas,
   isTokenRevoked,
   isTokenCached,
-} from '../../services/googleAuth';
+} from '../../services/auth/googleAuth';
 import {
   getAccountQuotaKey,
   verifyAndReconcileCooldowns,

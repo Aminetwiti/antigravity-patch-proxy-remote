@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session, Menu, Notification } from 'electron';
+﻿import { app, BrowserWindow, dialog, ipcMain, session, Menu, Notification } from 'electron';
 import log from 'electron-log/main';
 import { registerIpcHandlers } from './ipcHandlers';
 import * as fs from 'fs';
@@ -21,8 +21,8 @@ import { StorageManager } from './storage';
 import { getAppStoragePath, getLsLogPath } from './paths';
 import { setupApplicationMenu } from './menu';
 import { registerCustomSchemes, registerCustomSchemeHandlers } from './customScheme';
-import { DEFAULTS, SettingsService, SettingKey } from './services/settingsService';
-import { onTokenRevoked } from './services/googleAuth';
+import { DEFAULTS, SettingsService, SettingKey } from './services/storage/settingsService';
+import { onTokenRevoked } from './services/auth/googleAuth';
 import { maybeShowIdeInstallWizard } from './ideInstall';
 
 

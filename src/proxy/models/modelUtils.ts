@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Centralized model capability detection.
  * Replaces ~9 duplicate regex blocks across proxy.ts.
  */
 
 import { generateModelPlaceholderId, toSlug } from './idGenerator';
-import { normalizeGoogleModelId } from '../../services/googleAuth';
+import { normalizeGoogleModelId } from '../../services/auth/googleAuth';
 import type { CustomModel } from '../core/types';
 
 /** Helpers re-exported from src/presets/reasoningEffort.ts (single source of truth). */

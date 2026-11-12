@@ -1,4 +1,4 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import https from 'https';
 import * as path from 'path';
 import log from 'electron-log';
@@ -38,7 +38,7 @@ import {
   isGoogleCloudCodeModel,
   sanitizeCloudCodeGenerationConfig,
   normalizeConversationTurns,
-} from '../../services/googleAuth';
+} from '../../services/auth/googleAuth';
 import {
   registerAccountRefreshToken,
   getAccountQuotaKey,

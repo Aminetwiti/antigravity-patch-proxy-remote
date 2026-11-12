@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { CertificateService } from '../services/certificateService';
+﻿import { describe, it, expect } from 'vitest';
+import { CertificateService } from '../services/security/certificateService';
 
 describe('CertificateService', () => {
   it('generates a valid RSA key pair', () => {

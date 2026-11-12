@@ -1,1 +1,1 @@
-export * from './services/modelStore';
+﻿export * from './services/storage/modelStore';

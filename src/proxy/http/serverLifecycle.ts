@@ -1,4 +1,4 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -15,7 +15,7 @@ import {
   getLastCustomModelsContentOnDisk,
   setLastCustomModelsContentOnDisk,
 } from '../models/modelLoader';
-import { invalidateModelStoreCache } from '../../services/modelStore';
+import { invalidateModelStoreCache } from '../../services/storage/modelStore';
 import {
   invalidateHealthCache,
   checkAllModelsHealth,
@@ -32,8 +32,8 @@ import {
   updateLiveAccountQuota,
   prewarmGoogleAccounts,
   pollAllGoogleQuotas,
-} from '../../services/googleAuth';
-import { loadPersistentQuotaCache } from '../../services/quotaCacheStore';
+} from '../../services/auth/googleAuth';
+import { loadPersistentQuotaCache } from '../../services/storage/quotaCacheStore';
 import { stopCleanupInterval, startCleanupInterval } from '../core/shared';
 import { resolveGoogleIp } from './dnsResolver';
 import {

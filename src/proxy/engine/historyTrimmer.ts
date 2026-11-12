@@ -1,10 +1,10 @@
-import * as fs from 'fs';
+﻿import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
 import { FILE_DOWNLOAD_TIMEOUT_MS } from '../../constants';
 import type { GeminiRequestBody } from '../core/types';
-import { normalizeConversationTurns } from '../../services/googleAuth';
+import { normalizeConversationTurns } from '../../services/auth/googleAuth';
 
 // ─── Response Claimer for Hedged Requests ───────────────────────────────────
 

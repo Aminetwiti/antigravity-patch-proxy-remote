@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+﻿import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -12,7 +12,7 @@ vi.mock('electron-log', () => ({
   },
 }));
 
-import { discoverLocalGoogleAccounts } from '../services/localAccountDiscovery';
+import { discoverLocalGoogleAccounts } from '../services/discovery/localAccountDiscovery';
 
 describe('Local Google Account Discovery', () => {
   const testDir = path.join(os.tmpdir(), `discovery-test-${Date.now()}`);

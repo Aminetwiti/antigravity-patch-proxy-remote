@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Protobuf injection logic for the GetAvailableModels response.
  * Pure functions — no I/O, no side effects, fully testable.
  */
@@ -23,7 +23,7 @@ import { getCachedHealth, type ModelHealthResult } from '../resilience/modelHeal
 import { expandModelsWithEffort } from '../engine/effortExpander';
 import { detectModelCapabilities, getCanonicalModelKey, isNativeCloudCodeModel } from './modelUtils';
 import { isObsoleteModel } from '../../constants';
-import { normalizeCloudCodeModelId } from '../../services/googleAuth';
+import { normalizeCloudCodeModelId } from '../../services/auth/googleAuth';
 
 /**
  * Checks whether an incoming model id or label matches a model explicitly disabled in custom_models.json.

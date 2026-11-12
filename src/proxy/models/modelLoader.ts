@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Custom model loading and management.
  * Handles reading custom_models.json, encryption migration, and validation.
  */
@@ -19,7 +19,7 @@ import {
   isGoogleCloudCodeModel,
   getLiveAccountQuota,
   updateLiveAccountQuota,
-} from '../../services/googleAuth';
+} from '../../services/auth/googleAuth';
 
 /** Shape of a raw entry in the `providers` array of custom_models.json. */
 interface RawProviderEntry {

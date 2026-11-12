@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+﻿import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/mock/home' },
@@ -76,7 +76,7 @@ import {
   markTokenRevoked,
   clearRevokedTokens,
   isTokenRevoked,
-} from '../services/googleAuth';
+} from '../services/auth/googleAuth';
 import type { CustomModel } from '../proxy/core/types';
 
 describe('Google Multi-Account Pool & Failover', () => {

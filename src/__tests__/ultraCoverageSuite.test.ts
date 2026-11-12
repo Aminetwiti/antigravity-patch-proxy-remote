@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Ultra Coverage Test Suite — Comprehensive Test Matrix
  * Added 200+ parameterized unit & integration test cases.
  */
@@ -25,8 +25,8 @@ import { PROVIDERS, PROVIDER_DEFAULT_URLS, ALL_PROVIDERS, OPENAI_COMPATIBLE_PROV
 import { getProviderHeaders, supportsStreaming } from '../proxy/core/registry';
 import { getProviderColor, prefersReducedMotion } from '../preload/model-fetcher';
 import { PROVIDER_PRESETS } from '../preload/types';
-import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../services/configExchange';
-import { maskApiKey, isMaskedApiKey } from '../services/modelStore';
+import { exportProvidersToBase64, parseProvidersFromBase64, mergeProviderConfigs } from '../services/security/configExchange';
+import { maskApiKey, isMaskedApiKey } from '../services/storage/modelStore';
 import type { ProviderFileEntry, ProviderModelEntry } from '../preload/types';
 
 // ─── SECTION 1: Provider Presets & Header Matrix (50 Tests) ─────────────────

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { isGoogleCloudCodeModel } from '../services/googleAuth';
+﻿import { describe, it, expect } from 'vitest';
+import { isGoogleCloudCodeModel } from '../services/auth/googleAuth';
 import { getModelQuotaScore } from '../proxy/resilience/googlePool';
 
 describe('Google API Hardening (Forum Findings Parity)', () => {

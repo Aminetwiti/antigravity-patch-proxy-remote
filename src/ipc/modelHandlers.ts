@@ -1,4 +1,4 @@
-import { dialog, ipcMain } from 'electron';
+﻿import { dialog, ipcMain } from 'electron';
 import log from 'electron-log/main';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -7,14 +7,14 @@ import * as cryptoStore from '../cryptoStore';
 import * as customModelStore from '../customModelStore';
 import type { CustomModelFileEntry as CustomModelFileEntryFromTypes } from '../proxy/core/types';
 import { WELL_KNOWN_PRESETS } from '../presets';
-import * as configExchange from '../services/configExchange';
+import * as configExchange from '../services/security/configExchange';
 import { DEFAULT_PROXY_PORT } from '../constants';
 import { injectCustomModelsIntoUserStatus, injectCustomModelsIntoResponse } from '../proxy/models/protoInjector';
 import { loadCustomModels as loadProxyCustomModels } from '../proxy/models/modelLoader';
-import { discoverLocalAntigravityCredential } from '../services/localCredentialDiscovery';
-import { discoverLocalGoogleAccounts } from '../services/localAccountDiscovery';
+import { discoverLocalAntigravityCredential } from '../services/discovery/localCredentialDiscovery';
+import { discoverLocalGoogleAccounts } from '../services/discovery/localAccountDiscovery';
 import { IPC_CHANNELS } from './channels';
-import { atomicWriteJson, withWriteLock } from '../services/modelStore';
+import { atomicWriteJson, withWriteLock } from '../services/storage/modelStore';
 
 export interface CustomModelFileEntry {
   name: string;
