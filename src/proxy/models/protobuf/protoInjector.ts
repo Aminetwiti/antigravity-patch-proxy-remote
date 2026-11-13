@@ -109,7 +109,7 @@ export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResul
   name = name.replace(/^\[[^\]]+\]\s*/, '');
   
   if (!health || health.status === 'healthy' || health.status === 'slow') {
-    return `${star}🟢 • ${name}`;
+    return `${star}🟣 ◆ ${name}`;
   }
 
   if (health.status === 'unhealthy') {
@@ -117,7 +117,7 @@ export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResul
     return `${star}🔴${errNotice} • ${name}`;
   }
 
-  return `${star}🟢 • ${name}`;
+  return `${star}🟣 ◆ ${name}`;
 }
 
 function extractExistingModelKeys(msgBody: Buffer, modelTag: number): {

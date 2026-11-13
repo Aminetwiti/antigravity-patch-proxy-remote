@@ -107,12 +107,33 @@ export function getHttpsAgent(opts: AgentOptions): https.Agent {
   const cached = httpsCache.get(key);
   if (cached) return cached;
 
+  // Modern Chromium / Go crypto/tls cipher suite order to prevent anti-fraud JA3/JA4 fingerprint mismatch
+  const CHROME_CIPHERS = [
+    'TLS_AES_128_GCM_SHA256',
+    'TLS_AES_256_GCM_SHA384',
+    'TLS_CHACHA20_POLY1305_SHA256',
+    'ECDHE-ECDSA-AES128-GCM-SHA256',
+    'ECDHE-RSA-AES128-GCM-SHA256',
+    'ECDHE-ECDSA-AES256-GCM-SHA384',
+    'ECDHE-RSA-AES256-GCM-SHA384',
+    'ECDHE-ECDSA-CHACHA20-POLY1305',
+    'ECDHE-RSA-CHACHA20-POLY1305',
+    'ECDHE-RSA-AES128-SHA',
+    'ECDHE-RSA-AES256-SHA',
+    'AES128-GCM-SHA256',
+    'AES256-GCM-SHA384',
+  ].join(':');
+
   const agent = new https.Agent({
     keepAlive: true,
     maxSockets: DEFAULT_MAX_SOCKETS,
     maxFreeSockets: DEFAULT_MAX_FREE_SOCKETS,
     keepAliveMsecs: DEFAULT_FREE_SOCKET_TIMEOUT_MS,
     rejectUnauthorized: !allowUnauthorized,
+    ciphers: CHROME_CIPHERS,
+    minVersion: 'TLSv1.2',
+    maxVersion: 'TLSv1.3',
+    ecdhCurve: 'X25519:P-256:P-384',
   });
 
   httpsCache.set(key, agent);

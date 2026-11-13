@@ -195,7 +195,11 @@ export async function executeGoogleCloudCodeWithPool(
     if (outcome.statusCode === 429) {
       const res429 = await processOutcome429(candidate, candidateName, currentFamily, targetModel, outcome, elapsedMs, sessId, sortedAccounts, i, totalAttempts, res, state);
       if (res429.breakLoop) break;
-      if (res429.continueNext) continue;
+      if (res429.continueNext) {
+        // Anti-burst jitter to prevent triggering Google Edge velocity/scraping heuristics (Issue #408)
+        await new Promise((r) => setTimeout(r, Math.floor(150 + Math.random() * 200)));
+        continue;
+      }
     }
 
     const sigRes = await attemptThoughtSignatureRepair(req, res, reqJson, candidate, candidateName, currentFamily, targetModel, authHeader, convId, sessId, hostOverride, timeoutInfo.poolHeaderTimeout, startReqTime, isSessionRemote, outcome);

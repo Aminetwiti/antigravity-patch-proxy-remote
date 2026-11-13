@@ -148,21 +148,21 @@ export function registerModelHandlers(storageManager: StorageManager): void {
         if (googlePool) {
           const accounts = (googlePool as any).accounts as any[];
           const email = ((newProvider as any).email || '').toLowerCase();
-          if (!accounts.some((a: any) => (a.email || '').toLowerCase() === email || a.id === newProvider.id)) {
-            accounts.push({
-              id: newProvider.id,
-              name: newProvider.name,
-              email: (newProvider as any).email,
-              apiKey: newProvider.apiKey,
-              refreshToken: (newProvider as any).refreshToken,
-              projectId: (newProvider as any).projectId,
-              tier: (newProvider as any).tier,
-              tierId: (newProvider as any).tierId,
-              quotas: (newProvider as any).quotas,
-              enabled: newProvider.enabled ?? true,
-              status: (newProvider as any).status,
-              latencyMs: (newProvider as any).latencyMs,
-            });
+          const existingIdx = accounts.findIndex((a: any) => (a.email || '').toLowerCase() === email || a.id === newProvider.id);
+          
+          const { provider: _p, apiUrl: _u, accounts: _a, ...accountFields } = newProvider as any;
+          const completeAccount = {
+            ...accountFields,
+            enabled: newProvider.enabled ?? true,
+          };
+
+          if (existingIdx === -1) {
+            accounts.push(completeAccount);
+          } else {
+            accounts[existingIdx] = {
+              ...accounts[existingIdx],
+              ...completeAccount,
+            };
           }
         } else {
           providers.push(newProvider);

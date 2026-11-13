@@ -83,8 +83,17 @@ export function mergeProviderConfigs(
   // Find the main Google pool provider (has accounts[]) so solo Google imports
   // are merged as accounts instead of being added as separate providers.
   const findGooglePool = () => {
+    // Prefer the canonical pool provider if present
+    const canonical = existingMap.get('provider-google');
+    if (
+      canonical &&
+      (canonical.provider === 'google' || canonical.provider === 'gemini') &&
+      Array.isArray((canonical as any).accounts)
+    ) {
+      return canonical;
+    }
     for (const [, p] of existingMap) {
-      if ((p.provider === 'google' || p.provider === 'gemini') && Array.isArray((p as any).accounts) && (p as any).accounts.length > 0) {
+      if ((p.provider === 'google' || p.provider === 'gemini') && Array.isArray((p as any).accounts)) {
         return p;
       }
     }
@@ -95,32 +104,34 @@ export function mergeProviderConfigs(
     if (!inc || !inc.id || !inc.name) continue;
 
     // If this is a solo Google account (has email, no accounts array) and a
-    // Google pool provider already exists, merge it as an account in the pool.
+    // Google pool provider exists, merge it into the pool regardless of id collision
+    // to prevent replacing the entire pool or creating orphan providers (AUDIT-001 & AUDIT-002).
     const isGoogleSolo = (inc.provider === 'google' || inc.provider === 'gemini')
       && (inc as any).email
       && (!Array.isArray((inc as any).accounts) || (inc as any).accounts.length === 0);
 
-    if (isGoogleSolo && !existingMap.has(inc.id)) {
+    if (isGoogleSolo) {
       const pool = findGooglePool();
       if (pool) {
         const accounts = (pool as any).accounts as any[];
         const email = ((inc as any).email || '').toLowerCase();
-        const alreadyInPool = accounts.some((a: any) => ((a.email || '').toLowerCase() === email) || a.id === inc.id);
-        if (!alreadyInPool) {
-          accounts.push({
-            id: inc.id,
-            name: inc.name,
-            email: (inc as any).email,
-            apiKey: inc.apiKey,
-            refreshToken: (inc as any).refreshToken,
-            projectId: (inc as any).projectId,
-            tier: (inc as any).tier,
-            tierId: (inc as any).tierId,
-            quotas: (inc as any).quotas,
-            enabled: inc.enabled ?? true,
-            status: (inc as any).status,
-            latencyMs: (inc as any).latencyMs,
-          });
+        const existingAccIdx = accounts.findIndex((a: any) => ((a.email || '').toLowerCase() === email) || a.id === inc.id);
+        
+        // Exclude top-level provider plumbing so we only copy pure account fields
+        const { provider: _p, apiUrl: _u, accounts: _a, ...accountFields } = inc as any;
+        const completeAccount = {
+          ...accountFields,
+          enabled: inc.enabled ?? true,
+        };
+
+        if (existingAccIdx === -1) {
+          accounts.push(completeAccount);
+          mergedCount++;
+        } else if (strategy === 'overwrite' || strategy === 'merge') {
+          accounts[existingAccIdx] = {
+            ...accounts[existingAccIdx],
+            ...completeAccount,
+          };
           mergedCount++;
         } else {
           skippedCount++;

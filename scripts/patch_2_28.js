@@ -196,6 +196,7 @@ async function main() {
     'i18n',
     'wellKnown',
     'ipc',
+    'compat',
     'preload',
     'ui',
     'proxyGateway',

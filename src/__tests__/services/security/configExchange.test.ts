@@ -182,7 +182,7 @@ describe('configExchange', () => {
     expect(result.importedCount).toBe(0);
   });
 
-  it('skips duplicate Google solo account already in pool', () => {
+  it('skips duplicate Google solo account already in pool when strategy is skip', () => {
     const existing: ProviderFileEntry[] = [
       {
         id: 'provider-google',
@@ -211,10 +211,98 @@ describe('configExchange', () => {
       } as any,
     ];
 
-    const result = mergeProviderConfigs(existing, incoming, 'merge');
+    const result = mergeProviderConfigs(existing, incoming, 'skip');
     expect(result.providers).toHaveLength(1);
     expect((result.providers[0] as any).accounts).toHaveLength(1);
     expect(result.skippedCount).toBe(1);
+  });
+
+  it('preserves all metadata fields (picture, lastTestedAt, isFamily) during solo merge (AUDIT-002)', () => {
+    const existing: ProviderFileEntry[] = [
+      {
+        id: 'provider-google',
+        name: 'Google Gemini',
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'auto',
+        enabled: true,
+        models: [{ id: 'gemini-3.8-flash', enabled: true }],
+        accounts: [],
+      } as any,
+    ];
+
+    const incoming: ProviderFileEntry[] = [
+      {
+        id: 'google-acc-full',
+        name: 'Full Account',
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'ya29.full',
+        email: 'full@gmail.com',
+        refreshToken: '1//full',
+        projectId: 'custom-project',
+        tier: 'pro',
+        enabled: true,
+        picture: 'https://avatar.url/pic.jpg',
+        lastTestedAt: 1794500000000,
+        createdAt: 1794400000000,
+        isFamily: true,
+        hasClaude55: true,
+        models: [{ id: 'gemini-3.8-flash', enabled: true }],
+      } as any,
+    ];
+
+    const result = mergeProviderConfigs(existing, incoming, 'merge');
+    expect(result.providers).toHaveLength(1);
+    const acc = (result.providers[0] as any).accounts[0];
+    expect(acc.picture).toBe('https://avatar.url/pic.jpg');
+    expect(acc.isFamily).toBe(true);
+    expect(acc.hasClaude55).toBe(true);
+    expect(acc.lastTestedAt).toBe(1794500000000);
+    expect(acc.models).toBeDefined();
+    expect(acc.provider).toBeUndefined(); // top-level provider field stripped
+  });
+
+  it('prefers canonical provider-google pool over ad-hoc pools (AUDIT-003)', () => {
+    const existing: ProviderFileEntry[] = [
+      {
+        id: 'adhoc-google-pool',
+        name: 'Other Google',
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'auto',
+        enabled: true,
+        models: [],
+        accounts: [{ id: 'adhoc-1', email: 'adhoc@gmail.com' }],
+      } as any,
+      {
+        id: 'provider-google',
+        name: 'Google Gemini',
+        provider: 'google',
+        apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'auto',
+        enabled: true,
+        models: [],
+        accounts: [{ id: 'main-1', email: 'main@gmail.com' }],
+      } as any,
+    ];
+
+    const incoming: ProviderFileEntry[] = [
+      {
+        id: 'solo-incoming',
+        name: 'Solo In',
+        provider: 'google',
+        email: 'solo@gmail.com',
+        apiKey: 'ya29.solo',
+      } as any,
+    ];
+
+    const result = mergeProviderConfigs(existing, incoming, 'merge');
+    const canonicalPool = result.providers.find((p) => p.id === 'provider-google');
+    const adhocPool = result.providers.find((p) => p.id === 'adhoc-google-pool');
+
+    expect((canonicalPool as any).accounts).toHaveLength(2);
+    expect((adhocPool as any).accounts).toHaveLength(1);
   });
 
   describe('encrypted config exchange & security bounds', () => {
