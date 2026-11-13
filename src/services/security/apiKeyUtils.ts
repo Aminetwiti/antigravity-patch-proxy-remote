@@ -1,4 +1,4 @@
-import * as cryptoStore from '../../cryptoStore';
+﻿import * as cryptoStore from '../../compat/cryptoStore';
 
 export function isMaskedApiKey(key: string): boolean {
   if (!key) return false;

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import log from 'electron-log/main';
 
-import * as cryptoStore from '../../cryptoStore';
+import * as cryptoStore from '../security/cryptoStore';
 import { generateModelPlaceholderId } from '../../proxy/models/catalog/idGenerator';
 import { setLastCustomModelsContentOnDisk } from '../../proxy/models/catalog/modelLoader';
 import { normalizeCloudCodeModelId, normalizeGoogleModelId } from '../auth/googleAuth';

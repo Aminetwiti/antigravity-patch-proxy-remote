@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Custom model loading and management.
  * Handles reading custom_models.json, encryption migration, and validation.
  */
@@ -8,8 +8,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { app } from 'electron';
 import log from 'electron-log';
-import * as cryptoStore from '../../../cryptoStore';
-import { validateCustomModel } from '../../../schemaValidator';
+import * as cryptoStore from '../../../compat/cryptoStore';
+import { validateCustomModel } from '../../../shared/schemaValidator';
 import { ALL_PROVIDERS, type ProviderName, LOCAL_SERVICES, STANDARD_GOOGLE_MODELS, isObsoleteModel, PROVIDERS } from '../../../constants';
 import { generateModelPlaceholderId } from './idGenerator';
 import type { CustomModel } from '../../core/types';

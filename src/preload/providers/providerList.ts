@@ -11,7 +11,7 @@ import { createProviderCard } from './providerCard';
 export function renderProviderListView(ctx: ProviderModalContext): void {
   ctx.listContainer.style.display = 'flex';
   ctx.formContainer.style.display = 'none';
-  ctx.titleIcon.textContent = '☁️';
+  ctx.titleIcon.textContent = '??';
   ctx.titleText.textContent = 'Provider Manager';
 
   ctx.headerActions.replaceChildren();

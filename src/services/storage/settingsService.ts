@@ -1,7 +1,7 @@
-import * as fs from 'fs/promises';
+﻿import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { SleepBlocker } from '../../utils';
+import { SleepBlocker } from '../../shared/utils';
 import { DEFAULT_PROXY_PORT } from '../../constants';
 
 export enum SettingKey {

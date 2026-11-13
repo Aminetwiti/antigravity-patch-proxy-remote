@@ -1,6 +1,6 @@
-﻿/**
+/**
  * Anthropic provider translator.
- * Handles Gemini ↔ Anthropic request/response mapping and streaming SSE events.
+ * Handles Gemini ? Anthropic request/response mapping and streaming SSE events.
  */
 import * as path from 'path';
 
@@ -34,7 +34,7 @@ import type {
   GeminiRequestBody,
 } from '../core/types';
 
-// ─── Types ────────────────────────────────────────────────────────────────
+// --- Types ----------------------------------------------------------------
 
 interface AnthropicTool {
   name: string;
@@ -122,7 +122,7 @@ interface GeminiUsageMetadata {
   totalTokenCount: number;
 }
 
-// ─── REQUEST: Gemini → Anthropic ──────────────────────────────────────────
+// --- REQUEST: Gemini ? Anthropic ------------------------------------------
 
 function mapGeminiToolsToAnthropic(geminiTools: GeminiTool[]): AnthropicTool[] {
   if (!geminiTools || !Array.isArray(geminiTools)) return [];
@@ -313,7 +313,7 @@ export function mapGeminiToAnthropic(geminiBody: GeminiRequestBody, modelName: s
   return result;
 }
 
-// ─── RESPONSE: Anthropic → Gemini ─────────────────────────────────────────
+// --- RESPONSE: Anthropic ? Gemini -----------------------------------------
 
 export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: string): GeminiGenerateContentResponse {
   const contentBlocks = anthRes.content || [];
@@ -398,7 +398,7 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
   };
 }
 
-// ─── STREAM CHUNK: Anthropic SSE → Gemini ─────────────────────────────────
+// --- STREAM CHUNK: Anthropic SSE ? Gemini ---------------------------------
 
 const lastStreamIdByModel = new Map<string, string>();
 

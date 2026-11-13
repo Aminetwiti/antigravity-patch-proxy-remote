@@ -270,6 +270,22 @@ async function main() {
     fs.copyFileSync(repoIpcHandlers, path.join(buildDir, 'dist', 'customIpcHandlers.js'));
   }
 
+  // Copy modular IPC sub-modules and their dependencies (ipc/, compat/, shared/, ui/)
+  // ipc/ and compat/ are 100% custom — safe to overwrite
+  for (const subDir of ['ipc', 'compat']) {
+    const src = path.join(repoDist, subDir);
+    if (fs.existsSync(src)) {
+      copyRecursive(src, path.join(buildDir, 'dist', subDir), true);
+    }
+  }
+  // shared/ and ui/ may contain official files — only add missing ones
+  for (const subDir of ['shared', 'ui']) {
+    const src = path.join(repoDist, subDir);
+    if (fs.existsSync(src)) {
+      copyRecursive(src, path.join(buildDir, 'dist', subDir), false);
+    }
+  }
+
   // Augment dist/constants.js NON-DESTRUCTIVELY:
   const repoConstants = path.join(repoDist, 'constants.js');
   if (fs.existsSync(repoConstants)) {

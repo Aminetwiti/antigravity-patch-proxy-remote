@@ -4,7 +4,7 @@
  * with conflict resolution strategies (overwrite, merge, skip).
  */
 
-import type { ProviderFileEntry } from '../../customModelStore';
+import type { ProviderFileEntry } from '../../compat/customModelStore';
 import * as crypto from 'crypto';
 import {
   PBKDF2_ITERATIONS,
@@ -80,8 +80,54 @@ export function mergeProviderConfigs(
   let skippedCount = 0;
   let mergedCount = 0;
 
+  // Find the main Google pool provider (has accounts[]) so solo Google imports
+  // are merged as accounts instead of being added as separate providers.
+  const findGooglePool = () => {
+    for (const [, p] of existingMap) {
+      if ((p.provider === 'google' || p.provider === 'gemini') && Array.isArray((p as any).accounts) && (p as any).accounts.length > 0) {
+        return p;
+      }
+    }
+    return null;
+  };
+
   for (const inc of incoming) {
     if (!inc || !inc.id || !inc.name) continue;
+
+    // If this is a solo Google account (has email, no accounts array) and a
+    // Google pool provider already exists, merge it as an account in the pool.
+    const isGoogleSolo = (inc.provider === 'google' || inc.provider === 'gemini')
+      && (inc as any).email
+      && (!Array.isArray((inc as any).accounts) || (inc as any).accounts.length === 0);
+
+    if (isGoogleSolo && !existingMap.has(inc.id)) {
+      const pool = findGooglePool();
+      if (pool) {
+        const accounts = (pool as any).accounts as any[];
+        const email = ((inc as any).email || '').toLowerCase();
+        const alreadyInPool = accounts.some((a: any) => ((a.email || '').toLowerCase() === email) || a.id === inc.id);
+        if (!alreadyInPool) {
+          accounts.push({
+            id: inc.id,
+            name: inc.name,
+            email: (inc as any).email,
+            apiKey: inc.apiKey,
+            refreshToken: (inc as any).refreshToken,
+            projectId: (inc as any).projectId,
+            tier: (inc as any).tier,
+            tierId: (inc as any).tierId,
+            quotas: (inc as any).quotas,
+            enabled: inc.enabled ?? true,
+            status: (inc as any).status,
+            latencyMs: (inc as any).latencyMs,
+          });
+          mergedCount++;
+        } else {
+          skippedCount++;
+        }
+        continue;
+      }
+    }
 
     if (!existingMap.has(inc.id)) {
       existingMap.set(inc.id, { ...inc });

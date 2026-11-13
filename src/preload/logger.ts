@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Logger + metrics facades used by every other preload module.
  * ponytail: metrics uses lazy `require('./metrics')` so preload-shim standalone bundles don't fail.
  */
-import { createLogger } from '../logger';
+import { createLogger } from '../shared/logger';
 
 export const preloadLog = createLogger('Preload');
 

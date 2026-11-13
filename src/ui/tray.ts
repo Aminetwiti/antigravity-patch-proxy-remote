@@ -1,6 +1,6 @@
-import { app, Menu, MenuItemConstructorOptions, nativeImage, Tray } from 'electron';
+﻿import { app, Menu, MenuItemConstructorOptions, nativeImage, Tray } from 'electron';
 import * as path from 'path';
-import { isMacOS } from '../utils';
+import { isMacOS } from '../shared/utils';
 
 // Keep tray as a global variable to prevent it from being garbage collected.
 let tray: Tray | null = null;

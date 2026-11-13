@@ -1,10 +1,10 @@
 ﻿import { app, BrowserWindow, dialog, ipcMain, session, Menu, Notification } from 'electron';
 import log from 'electron-log/main';
-import { registerIpcHandlers } from './ipcHandlers';
+import { registerIpcHandlers } from './ipc';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import * as readline from 'readline';
-import { createWindow, showQuitConfirmation, setShowQuitConfirmation, showOrCreateWindow } from './utils';
+import { createWindow, showQuitConfirmation, setShowQuitConfirmation, showOrCreateWindow } from './shared/utils';
 import {
   startAndMonitorLanguageServer,
   getLsPort,
@@ -14,13 +14,13 @@ import {
   setupLocalCertTrust,
   getLsProcess,
 } from './languageServer';
-import { initAutoUpdater } from './updater';
+import { initAutoUpdater } from './compat/updater';
 import { WINDOW_ORIGIN, DYNAMIC_PORT, LOOPBACK_HOSTS } from './constants';
-import { createTray } from './tray';
-import { StorageManager } from './storage';
-import { getAppStoragePath, getLsLogPath } from './paths';
-import { setupApplicationMenu } from './menu';
-import { registerCustomSchemes, registerCustomSchemeHandlers } from './customScheme';
+import { createTray } from './ui/tray';
+import { StorageManager } from './compat/storage';
+import { getAppStoragePath, getLsLogPath } from './shared/paths';
+import { setupApplicationMenu } from './ui/menu';
+import { registerCustomSchemes, registerCustomSchemeHandlers } from './shared/customScheme';
 import { DEFAULTS, SettingsService, SettingKey } from './services/storage/settingsService';
 import { onTokenRevoked } from './services/auth/googleAuth';
 import { maybeShowIdeInstallWizard } from './ideInstall';

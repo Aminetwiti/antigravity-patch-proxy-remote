@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Background Health Probe & Auto-Healing Service for Antigravity Proxy.
  *
  * Periodically probes custom LLM provider endpoints to measure latency and detect outages.
@@ -8,7 +8,7 @@
 import { EventEmitter } from 'events';
 import log from 'electron-log/main';
 import { testModelConnection } from '../storage/providerStore';
-import { getRealtimeStats } from '../../metrics';
+import { getRealtimeStats } from '../../shared/metrics';
 
 export interface ProviderHealthStatus {
   providerId: string;

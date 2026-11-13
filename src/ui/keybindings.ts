@@ -1,5 +1,5 @@
-import { BrowserWindow, type BrowserWindowInstance } from 'electron';
-import { isMacOS } from '../utils';
+﻿import { BrowserWindow, type BrowserWindowInstance } from 'electron';
+import { isMacOS } from '../shared/utils';
 
 interface KeybindingActions {
   createNewWindow(): void;

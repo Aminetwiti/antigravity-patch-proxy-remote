@@ -1,4 +1,4 @@
-/**
+﻿/**
  * IDE Install — Constants, platform helpers, and condition checks.
  */
 
@@ -6,8 +6,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import log from 'electron-log/main';
-import { IDE_NEW_DATA_DIR, IDE_OLD_DATA_DIR } from '../paths';
-import { StorageManager } from '../storage';
+import { IDE_NEW_DATA_DIR, IDE_OLD_DATA_DIR } from '../shared/paths';
+import { StorageManager } from '../compat/storage';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 

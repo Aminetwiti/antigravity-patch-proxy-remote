@@ -1,4 +1,4 @@
-﻿import log from 'electron-log';
+import log from 'electron-log';
 import { loadCustomModels } from '../catalog/modelLoader';
 import { detectModelCapabilities, getCanonicalModelKey } from '../catalog/modelUtils';
 import { generateModelPlaceholderId, toSlug } from '../catalog/idGenerator';
@@ -7,6 +7,7 @@ import { isRecentModel } from '../../state/local/recentModelsStore';
 import type { CustomModel } from '../../core/types';
 import { expandModelsWithEffort } from '../../engine/transforms/effortExpander';
 import { isObsoleteModel } from '../../../constants';
+import { normalizeCloudCodeModelId } from '../../../services/auth/googleAuth';
 
 function getHealthScore(health: ModelHealthResult | null): number {
   if (!health) return 2; // pending
@@ -58,15 +59,15 @@ function formatDisplayName(m: CustomModel): string {
   const isFav = isRecentModel(m.name);
   let dispName = m.displayName || m.name;
   dispName = dispName.replace(/^\[[^\]]+\]\s*/, '');
-  const favTag = isFav ? '? ' : '';
+  const favTag = isFav ? '⭐ ' : '';
   
   if (!health || health.status === 'healthy' || health.status === 'slow') {
-    return `${favTag}?? � ${dispName}`;
+    return `${favTag}🟣 ◆ ${dispName}`;
   }
   
   // For unhealthy models, display error tag cleanly
   const err = health.error || 'Offline';
-  return `${favTag}?? [${err}] � ${dispName}`;
+  return `${favTag}🔴 [${err}] ◆ ${dispName}`;
 }
 
 export function resolvePlanModelEnum(modelName?: string): string {
@@ -117,11 +118,31 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
     (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName),
   );
   const sortedCustomModels = deduplicateModels(sortCustomModels(expandModelsWithEffort(filteredCustom)));
+
+  // Collect canonical IDs covered by auto-pool entries to suppress native
+  // duplicates — the IDE resolves both to the same canonical ID, so keeping
+  // the native causes selection to jump to it instead of the auto-pool.
+  const pooledBaseIds = new Set<string>();
+  for (const m of sortedCustomModels) {
+    if (m.name?.includes(':auto-pool') || m.apiKey === 'auto') {
+      const raw = (m.externalModelName || m.name || '').replace(/^models\//, '').replace(/^google:/, '').replace(/:auto-pool.*$/, '');
+      const norm = normalizeCloudCodeModelId(raw);
+      pooledBaseIds.add(raw.toLowerCase());
+      if (norm) pooledBaseIds.add(norm.toLowerCase());
+    }
+  }
+
   if (Array.isArray(target)) {
     const cleanTarget = target.filter((t: any) => {
       const id = t?.name || t?.model || t?.id || '';
       const disp = t?.displayName || '';
-      return !isObsoleteModel(id, disp);
+      if (isObsoleteModel(id, disp)) return false;
+      if (pooledBaseIds.size > 0) {
+        const rawId = String(id).replace(/^models\//, '').toLowerCase();
+        const normId = normalizeCloudCodeModelId(rawId)?.toLowerCase() || '';
+        if (pooledBaseIds.has(rawId) || pooledBaseIds.has(normId)) return false;
+      }
+      return true;
     });
     const mapped = sortedCustomModels.map((m) => {
       const cap = detectModelCapabilities(m, true);
@@ -153,6 +174,12 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const innerModel = (v as any)?.model;
       const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
       if (isNativeModel || !isObsoleteModel(k, disp)) {
+        // Suppress native model duplicated by an auto-pool entry
+        if (!isNativeModel && pooledBaseIds.size > 0) {
+          const kLower = k.toLowerCase().replace(/^models\//, '');
+          const kNorm = normalizeCloudCodeModelId(kLower)?.toLowerCase() || '';
+          if (pooledBaseIds.has(kLower) || pooledBaseIds.has(kNorm)) continue;
+        }
         if (v && typeof v === 'object') {
           const entry = { ...(v as Record<string, unknown>) };
           const entryDisp = String(entry.displayName || '');

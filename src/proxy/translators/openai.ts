@@ -1,6 +1,6 @@
-﻿/**
+/**
  * OpenAI/Ollama provider translator.
- * Handles Gemini ↔ OpenAI/Ollama request/response mapping and streaming chunks.
+ * Handles Gemini ? OpenAI/Ollama request/response mapping and streaming chunks.
  */
 import * as path from 'path';
 
@@ -34,7 +34,7 @@ import type {
   GeminiRequestBody,
 } from '../core/types';
 
-// ─── Types ────────────────────────────────────────────────────────────────
+// --- Types ----------------------------------------------------------------
 
 interface OpenAITool {
   type: 'function';
@@ -137,7 +137,7 @@ interface DSMLParsedResult {
   cleanText: string;
 }
 
-// ─── REQUEST: Gemini → OpenAI ──────────────────────────────────────────────
+// --- REQUEST: Gemini ? OpenAI ----------------------------------------------
 
 function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[]): OpenAITool[] {
   if (!geminiTools || !Array.isArray(geminiTools)) return [];
@@ -309,7 +309,7 @@ export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: stri
   return payload;
 }
 
-// ─── RESPONSE: OpenAI → Gemini ─────────────────────────────────────────────
+// --- RESPONSE: OpenAI ? Gemini ---------------------------------------------
 
 function parseDSMLToolCalls(text: string): DSMLParsedResult | null {
   try {
@@ -443,7 +443,7 @@ export function mapOpenAIToGemini(openAiRes: OpenAIResponse, modelName: string):
   };
 }
 
-// ─── STREAM CHUNK: OpenAI → Gemini ────────────────────────────────────────
+// --- STREAM CHUNK: OpenAI ? Gemini ----------------------------------------
 
 export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string): GeminiCandidate | null {
   const choice = chunk.choices?.[0];

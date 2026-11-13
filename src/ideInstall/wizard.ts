@@ -1,4 +1,4 @@
-/**
+﻿/**
  * IDE Install Wizard — Window orchestration and IPC handlers.
  */
 
@@ -7,10 +7,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import log from 'electron-log/main';
 import { shouldShowIdeInstallWizard } from './constants';
-import { IDE_OLD_DATA_DIR, IDE_NEW_DATA_DIR, IDE_BACKUP_DATA_DIR } from '../paths';
+import { IDE_OLD_DATA_DIR, IDE_NEW_DATA_DIR, IDE_BACKUP_DATA_DIR } from '../shared/paths';
 import { copyUserData, downloadAndInstallIde } from './service';
 import { getWizardHtml } from './wizardHtml';
-import { StorageManager } from '../storage';
+import { StorageManager } from '../compat/storage';
 
 /**
  * Shows the IDE install wizard as a modal window.

@@ -20,6 +20,7 @@ const https = require('https');
 // Disable self-signed cert rejections for proxy probing
 // TLS verification preserved; rejectUnauthorized: false is scoped strictly to local probe endpoints
 
+try { const l = require('electron-log'); if (l?.transports?.file) l.transports.file.setAppName('antigravity-patch-proxy'); } catch(e){}
 const repoRoot = path.resolve(__dirname, '..');
 const { getValidGoogleAccessToken } = require(path.join(repoRoot, 'dist', 'services', 'googleAuth.js'));
 

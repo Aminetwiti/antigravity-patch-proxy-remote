@@ -1,4 +1,4 @@
-/**
+﻿/**
  * IDE Install Service — Download, extract, copy, and launch logic.
  */
 
@@ -10,7 +10,7 @@ import * as https from 'https';
 import * as http from 'http';
 import log from 'electron-log/main';
 import { fetchIdeDownloadUrl, getPlatformKey, getIdeInstallPath } from './constants';
-import { IDE_OLD_DATA_DIR, IDE_NEW_DATA_DIR } from '../paths';
+import { IDE_OLD_DATA_DIR, IDE_NEW_DATA_DIR } from '../shared/paths';
 
 // ─── Download ──────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import log from 'electron-log';
+﻿import log from 'electron-log';
 import { execFile, spawn, ChildProcess } from 'child_process';
 import { app, session } from 'electron';
 import { shellEnvSync } from 'shell-env';
@@ -7,9 +7,9 @@ import * as os from 'os';
 import path from 'path';
 import * as readline from 'readline';
 import { PassThrough } from 'stream';
-import { getLsLogPath, getAppDataDirName, getActivePortFilePath } from './paths';
+import { getLsLogPath, getAppDataDirName, getActivePortFilePath } from './shared/paths';
 import { LS_CERT_FINGERPRINT, LOOPBACK_HOSTS, GOOGLE_HOSTS } from './constants';
-import { setupNodeWrapper } from './utils';
+import { setupNodeWrapper } from './shared/utils';
 import { startProxy, stopProxy } from './proxy';
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 /**
- * Doctor UI — Main Entry point coordinating:
+ * Doctor UI � Main Entry point coordinating:
  * 1. Module 1: Custom Provider Manager (provider-manager.ts)
  * 2. Module 2: Custom Model Fetcher (model-fetcher.ts)
  */
@@ -26,7 +26,7 @@ export {
   prefersReducedMotion,
 };
 
-// ─── Direct Access Surface & Globals ─────────────────────────────────
+// --- Direct Access Surface & Globals ---------------------------------
 export const doctorUiAPI = {
   openModal: (existingProvider?: ProviderFileEntry) => openProviderManagerModal(existingProvider),
   openProvider: async (providerIdOrName: string) => {
@@ -156,7 +156,7 @@ export async function injectCustomModelsSection(): Promise<void> {
 
   const addModelBtn = document.createElement('button');
   addModelBtn.className = 'agy-btn-primary';
-  addModelBtn.innerHTML = `☁️ Provider Manager`;
+  addModelBtn.innerHTML = `?? Provider Manager`;
   addModelBtn.addEventListener('click', () => openProviderManagerModal());
 
   viewActions.appendChild(testAllBtn);
@@ -180,7 +180,7 @@ export async function injectCustomModelsSection(): Promise<void> {
 }
 
 /**
- * MutationObserver to auto-inject the Custom Models section when Settings → Customizations is open.
+ * MutationObserver to auto-inject the Custom Models section when Settings ? Customizations is open.
  */
 
 let _injectionObserver: MutationObserver | null = null;
@@ -202,7 +202,7 @@ export function setupDoctorUiInjection(): void {
 
   // Live Real-Time Storage Listener for Modal & UI Synchronization
   storageAPI.onChanged((changes) => {
-    preloadLog.debug('Storage change detected — syncing Custom Models UI & modals in real time.', changes);
+    preloadLog.debug('Storage change detected � syncing Custom Models UI & modals in real time.', changes);
     void renderCustomModelsList();
     const refreshBtn = findRefreshButton();
     if (refreshBtn) refreshBtn.click();

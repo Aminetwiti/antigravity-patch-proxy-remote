@@ -17,6 +17,7 @@ const readline = require('readline');
 const { exec } = require('child_process');
 const { runProbe } = require('./probe-pool');
 
+try { const l = require('electron-log'); if (l?.transports?.file) l.transports.file.setAppName('antigravity-patch-proxy'); } catch(e){}
 const isCheckOnly = process.argv.includes('--check-only');
 
 function openBrowser(url) {

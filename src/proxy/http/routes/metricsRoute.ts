@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Runtime metrics route (Phase 7.1).
  *
  * ─────────────────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@
  * not scraping.
  */
 
-import * as metrics from '../../../metrics';
+import * as metrics from '../../../shared/metrics';
 
 export type MetricsSnapshot = ReturnType<typeof metrics.snapshot>;
 

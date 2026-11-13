@@ -14,7 +14,7 @@ import {
 } from '../../core/shared';
 import * as registry from '../../core/registry';
 import { loadCustomModels } from '../../models/catalog/modelLoader';
-import { recordProviderUsage } from '../../../customModelStore';
+import { recordProviderUsage } from '../../../compat/customModelStore';
 import { classifyError, ErrorDiagnostic, type ErrorType } from '../../resilience/retry/errorClassifier';
 import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from '../../resilience/retry/retryStrategy';
 import { getOpenBreaker, recordFailure, recordSuccess } from '../../resilience/circuit/circuitBreaker';

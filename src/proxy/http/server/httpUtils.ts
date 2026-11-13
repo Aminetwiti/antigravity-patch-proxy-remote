@@ -1,7 +1,7 @@
-import * as http from 'http';
+﻿import * as http from 'http';
 import { randomBytes } from 'crypto';
 import log from 'electron-log';
-import { createLogger } from '../../../logger';
+import { createLogger } from '../../../shared/logger';
 import { LOOPBACK_HOSTS } from '../../../constants';
 
 export const proxyLog = createLogger('Proxy');

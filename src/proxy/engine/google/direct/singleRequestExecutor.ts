@@ -1,7 +1,7 @@
 ﻿import type http from 'http';
 import https from 'https';
 import log from 'electron-log';
-import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from '../../../../metrics';
+import { startTimer as metricTimer, inc as metricInc, observe as metricObserve } from '../../../../shared/metrics';
 import { GOOGLE_HOSTS, GOOGLE_PROXY_TIMEOUT_MS } from '../../../../constants';
 import type { CustomModel } from '../../../core/types';
 import { isRetryableNetworkError } from '../../../resilience/retry/retryStrategy';

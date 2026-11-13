@@ -1,6 +1,6 @@
 import { Menu, MenuItem, MenuItemConstructorOptions, shell } from 'electron';
-import { createWindow, isMacOS } from '../utils';
-import { MenuUpdateStep, updateActions } from '../updater';
+import { createWindow, isMacOS } from '../shared/utils';
+import { MenuUpdateStep, updateActions } from '../compat/updater';
 
 /**
  * Applies modifications to the default application menu.

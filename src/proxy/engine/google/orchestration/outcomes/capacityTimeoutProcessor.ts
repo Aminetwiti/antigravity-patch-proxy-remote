@@ -8,7 +8,7 @@ import {
   recordAccountLatency,
 } from '../../../../resilience/pools/googlePool';
 import { sessionAffinities } from '../../../../resilience/pools/sessionAffinities';
-import { observe as metricObserve } from '../../../../../metrics';
+import { observe as metricObserve } from '../../../../../shared/metrics';
 import { trimContextPayload } from '../../../transforms/contextTrimmer';
 import { trimOldestHistory } from '../../../transforms/historyTrimmer';
 import { normalizeConversationTurns } from '../../../../../services/auth/googleAuth';
