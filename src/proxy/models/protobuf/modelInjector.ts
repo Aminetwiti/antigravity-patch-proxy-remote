@@ -174,8 +174,8 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const innerModel = (v as any)?.model;
       const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
       if (isNativeModel || !isObsoleteModel(k, disp)) {
-        // Suppress native model duplicated by an auto-pool entry
-        if (!isNativeModel && pooledBaseIds.size > 0) {
+        // Suppress native or duplicate model covered by an auto-pool entry
+        if (pooledBaseIds.size > 0) {
           const kLower = k.toLowerCase().replace(/^models\//, '');
           const kNorm = normalizeCloudCodeModelId(kLower)?.toLowerCase() || '';
           if (pooledBaseIds.has(kLower) || pooledBaseIds.has(kNorm)) continue;

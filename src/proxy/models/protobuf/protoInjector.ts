@@ -34,7 +34,7 @@ export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabl
   const rawLabel = (labelStr || '').trim().toLowerCase();
   const cleanLabel = (labelStr || '')
     .replace(/^⭐\s*/, '')
-    .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+    .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
     .replace(/\s*\([^)]*\)\s*$/, '')
     .trim()
     .toLowerCase();
@@ -157,12 +157,13 @@ function extractExistingModelKeys(msgBody: Buffer, modelTag: number): {
         if (
           idStr.toLowerCase().includes('model_placeholder_') ||
           labelStr.includes('•') ||
+          labelStr.includes('◆') ||
           labelStr.includes('|') ||
           labelStr.includes('⭐')
         ) {
           const norm = labelStr
             .replace(/^⭐\s*/, '')
-            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
             .trim()
             .toLowerCase();
           if (norm) placeholderNames.add(norm);
@@ -466,12 +467,13 @@ function injectCustomModelsIntoUserStatusJson(
         if (
           modelId.toLowerCase().includes('model_placeholder_') ||
           label.includes('•') ||
+          label.includes('◆') ||
           label.includes('|') ||
           label.includes('⭐')
         ) {
           const norm = label
             .replace(/^⭐\s*/, '')
-            .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
             .trim()
             .toLowerCase();
           if (norm) existingPlaceholderNames.add(norm);
@@ -680,12 +682,13 @@ export function injectCustomModelsIntoUserStatus(
           if (
             modelId.toLowerCase().includes('model_placeholder_') ||
             label.includes('•') ||
+            label.includes('◆') ||
             label.includes('|') ||
             label.includes('⭐')
           ) {
             const norm = label
               .replace(/^⭐\s*/, '')
-              .replace(/^[🟢🟡🔴]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|]?\s*/i, '')
+              .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
               .trim()
               .toLowerCase();
             if (norm) existingPlaceholderNames.add(norm);

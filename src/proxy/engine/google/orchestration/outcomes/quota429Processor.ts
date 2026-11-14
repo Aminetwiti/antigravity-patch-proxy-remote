@@ -205,7 +205,15 @@ export async function processOutcome429(
         log.info(
           `[Proxy] ⚡ Quota exhausted on [${candidateName}] (${modelFamily}). Anti-cascade jitter ${jitterMs}ms before next account.`,
         );
-        await new Promise((r) => setTimeout(r, jitterMs));
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, jitterMs);
+          if (typeof res?.once === 'function') {
+            res.once('close', () => {
+              clearTimeout(timer);
+              resolve();
+            });
+          }
+        });
         if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
       } else {
         log.info(`[Proxy] ⚡ Quota exhausted on [${candidateName}] (${modelFamily}). Immediate 0ms rotation.`);

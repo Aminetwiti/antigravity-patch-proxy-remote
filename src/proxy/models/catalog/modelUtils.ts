@@ -365,7 +365,7 @@ export function getCanonicalModelKey(idOrName?: string, displayName?: string): s
       .toLowerCase()
       .replace(/^models\//, '')
       .replace(/^\[[^\]]+\]\s*/, '')
-      .replace(/^[🟢🟡🔴⭐•\s]+/g, '')
+      .replace(/^[🟢🟡🔴🟣⭐•◆\s]+/g, '')
       .replace(/\(thinking\)/g, '')
       .replace(/-tiered$/, '')
       .replace(/[^a-z0-9]+/g, '-')
@@ -395,7 +395,7 @@ export function getCanonicalModelKey(idOrName?: string, displayName?: string): s
 export function isNativeCloudCodeModel(modelName: string): boolean {
   if (!modelName || typeof modelName !== 'string') return false;
   if (modelName.startsWith('custom-') || /MODEL_PLACEHOLDER_/i.test(modelName)) return false;
-  if (/[🟢🟡🔴•⭐]/.test(modelName)) return false;
+  if (/[🟢🟡🔴🟣•⭐◆]/.test(modelName)) return false;
 
   const clean = modelName.replace(/^models\//, '').trim().toLowerCase();
   const slug = clean.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -506,7 +506,7 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     candLower.endsWith(enumName.toLowerCase()) ||
     (Boolean(extLower) && (candLower === extLower || cleanLower === extLower || candLower === `models/${extLower}`)) ||
     (Boolean(idLower) && (candLower === idLower || cleanLower === idLower || candLower === `models/${idLower}`)) ||
-    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower || candLower.replace(/^[🟢🟡🔴⭐•\s]+/, '') === dispLower || cleanLower.replace(/^[🟢🟡🔴⭐•\s]+/, '') === dispLower)) ||
+    (Boolean(dispLower) && (candLower === dispLower || cleanLower === dispLower || candLower.replace(/^[🟢🟡🔴🟣⭐•◆\s]+/, '') === dispLower || cleanLower.replace(/^[🟢🟡🔴🟣⭐•◆\s]+/, '') === dispLower)) ||
     (Boolean(mSlugLower) && (candLower === mSlugLower || cleanLower === mSlugLower)) ||
     (isCandidateGemini && isModelGemini && Boolean(normExt) && normCand === normExt) ||
     (isCandidateGemini && isModelGemini && Boolean(normId) && normCand === normId) ||

@@ -92,8 +92,11 @@ export function persistAccountQuotaExhaustedToDisk(accountEmail: string, resetIs
             for (const a of pr.accounts) {
               const email = (a.email || '').trim().toLowerCase();
               if (email === cleanTarget) {
-                if (a.status !== 'exhausted' && a.status !== 'validation_required' && !a.isValidationRequired) {
-                  a.status = 'exhausted';
+                if (a.status !== 'validation_required' && !a.isValidationRequired) {
+                  const hasClaudeQuota = typeof a.quotas?.claudeFiveHourPct === 'number' && a.quotas.claudeFiveHourPct > 0;
+                  if (!hasClaudeQuota) {
+                    a.status = 'exhausted';
+                  }
                   if (!a.quotas) a.quotas = {};
                   a.quotas.geminiFiveHourPct = 0;
                   a.quotas.fiveHourPercentage = 0;

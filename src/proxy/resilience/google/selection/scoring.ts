@@ -64,11 +64,19 @@ export function isAccountNearExhaustion(candidate: CustomModel, modelFamily?: st
         : 100);
 
   const now = Date.now();
+  const FIVE_H_WINDOW_MS = 18_900_000;
+  const hasValidUpdatedAt = typeof q.updatedAt === 'number' && q.updatedAt > 0;
+  const quotaAge = hasValidUpdatedAt ? now - q.updatedAt : 0;
+  const quotaIsStaleWindow = hasValidUpdatedAt && quotaAge >= FIVE_H_WINDOW_MS;
+
   const fiveHourResetStr = isArgon
     ? (q.argonFiveHourReset || q.geminiFiveHourReset || q.fiveHourResetTime)
     : (isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime));
   const fiveHourResetTs = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() : 0;
-  const fiveHourResetPassed = Boolean(fiveHourResetTs > 0 && (!q.updatedAt || fiveHourResetTs > q.updatedAt) && fiveHourResetTs <= now);
+  const fiveHourResetPassed = Boolean(
+    (fiveHourResetTs > 0 && (!q.updatedAt || fiveHourResetTs > q.updatedAt) && fiveHourResetTs <= now) ||
+    quotaIsStaleWindow,
+  );
 
   const weeklyResetStr = isArgon
     ? (q.argonWeeklyReset || q.geminiWeeklyReset || q.weeklyResetTime)
@@ -153,11 +161,16 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
         : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 50)));
 
   const now = Date.now();
+  const hasValidUpdatedAt = typeof q.updatedAt === 'number' && q.updatedAt > 0;
+  const quotaAge = hasValidUpdatedAt ? now - q.updatedAt : 0;
+  const FIVE_H_WINDOW_MS = 18_900_000;
+  const quotaIsStaleWindow = hasValidUpdatedAt && quotaAge >= FIVE_H_WINDOW_MS;
+
   const fiveHourResetStr = isArgon
     ? (q.argonFiveHourReset || q.geminiFiveHourReset || q.fiveHourResetTime)
     : (isClaude ? q.claudeFiveHourReset : (q.geminiFiveHourReset || q.fiveHourResetTime));
   const fiveHourResetTs = fiveHourResetStr ? new Date(fiveHourResetStr).getTime() : 0;
-  const fiveHourResetPassed = Boolean(fiveHourResetTs > 0 && fiveHourResetTs <= now);
+  const fiveHourResetPassed = Boolean((fiveHourResetTs > 0 && fiveHourResetTs <= now) || quotaIsStaleWindow);
 
   const weeklyResetStr = isArgon
     ? (q.argonWeeklyReset || q.geminiWeeklyReset || q.weeklyResetTime)
@@ -165,12 +178,8 @@ export function getModelQuotaScore(m: CustomModel, modelFamily?: string): number
   const weeklyResetTs = weeklyResetStr ? new Date(weeklyResetStr).getTime() : 0;
   const weeklyResetPassed = Boolean(weeklyResetTs > 0 && weeklyResetTs <= now);
 
-  const quotaAge = now - (typeof q.updatedAt === 'number' ? q.updatedAt : 0);
-  const FIVE_H_WINDOW_MS = 18_900_000;
-  const quotaIsStaleWindow = quotaAge >= FIVE_H_WINDOW_MS;
-
   if (fiveHour <= 0 && !fiveHourResetPassed) {
-    if (!fiveHourResetStr && typeof q.updatedAt === 'number' && q.updatedAt > 0 && quotaIsStaleWindow) return 20;
+    if (quotaIsStaleWindow) return 20;
     return 0;
   }
   if (weekly <= 0 && !weeklyResetPassed) return 0;

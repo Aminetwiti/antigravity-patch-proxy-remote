@@ -95,7 +95,8 @@ export async function dispatchWithHedge(
     : isContextualPayload
     ? Math.max(HEDGED_REQUEST_DELAY_MS, 8_000)
     : HEDGED_REQUEST_DELAY_MS;
-  const hedgeDelay = Math.min(baseHedgeDelay, Math.floor(poolHeaderTimeout * 0.6));
+  const maxDelayFraction = isFlashThinkingHedgeable ? 0.85 : 0.6;
+  const hedgeDelay = Math.min(baseHedgeDelay, Math.floor(poolHeaderTimeout * maxDelayFraction));
 
   const hedgePromise = new Promise<GoogleRequestOutcome>((resolveHedge) => {
     hedgeTimer = setTimeout(async () => {
