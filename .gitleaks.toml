@@ -86,8 +86,11 @@ paths = [
   '''\.spec\.ts$''',
   '''_test\.go$''',
   '''_test\.go$''',
-  # Documentation files — contain example/placeholder values in code blocks
-  '''\.md$''',
+  # Specific documentation files safe to skip (contain only placeholders/examples)
+  '''README\.md$''',
+  '''ARCHITECTURE\.md$''',
+  '''TROUBLESHOOTING\.md$''',
+  '''DESIGN\.md$''',
   # Temp/scratch files that should not be committed anyway
   '''temp_ui_main\.js$''',
   '''certs/''',

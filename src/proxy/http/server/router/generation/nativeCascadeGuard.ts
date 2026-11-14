@@ -68,6 +68,9 @@ export function handleNativeCascadeGuard(
   const isFallbackToDifferentModel = isNativeProtected && !isSameModel && !isExplicitUserCustom;
 
   if (isFallbackToDifferentModel) {
+    if (process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1') {
+      return { blocked: false, isNativeCloudCode };
+    }
     const timeSinceNative = Date.now() - activeNative!.lastSeen;
     if (timeSinceNative < NATIVE_CASCADE_BLOCK_WINDOW_MS) {
       log.warn(

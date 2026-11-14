@@ -7,9 +7,12 @@ import { getLiveAccountQuota } from './quotaPoller';
  */
 export function normalizeCloudCodeModelId(modelId: string): string {
   if (!modelId) return 'gemini-3.8-flash-tiered';
-  const clean = modelId.replace(/^models\//, '').trim();
+  const clean = modelId.replace(/^models\//, '').trim().toLowerCase();
 
   const validCloudCodeModels = new Set([
+    'gemini-3.8-flash-low',
+    'gemini-3.8-flash-medium',
+    'gemini-3.8-flash-high',
     'gemini-3.8-flash-tiered',
     'gemini-4-argon-high',
     'gemini-4-argon-medium',
@@ -30,19 +33,19 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
     'gemini-4-argon-low': 'gemini-4-argon-low',
-    'gemini-3.8-flash-low': 'gemini-3.8-flash-tiered',
-    'gemini-3.8-flash-medium': 'gemini-3.8-flash-tiered',
-    'gemini-3.8-flash-high': 'gemini-3.8-flash-tiered',
-    'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
-    'gemini-2.5-flash-lite': 'gemini-3.8-flash-tiered',
-    'gemini-3-preview': 'gemini-3.8-flash-tiered',
-    'gemini-3-flash-preview': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-flash-lite': 'gemini-3.8-flash-tiered',
-    'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-tiered',
-    'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-tiered',
-    'model_tier_flash_lite': 'gemini-3.8-flash-tiered',
-    'model-tier-flash-lite': 'gemini-3.8-flash-tiered',
+    'gemini-3.8-flash-low': 'gemini-3.8-flash-low',
+    'gemini-3.8-flash-medium': 'gemini-3.8-flash-medium',
+    'gemini-3.8-flash-high': 'gemini-3.8-flash-high',
+    'gemini-3.8-flash': 'gemini-3.8-flash-medium',
+    'gemini-2.5-flash-lite': 'gemini-3.8-flash-low',
+    'gemini-3-preview': 'gemini-3.8-flash-medium',
+    'gemini-3-flash-preview': 'gemini-3.8-flash-medium',
+    'gemini-3.6-flash': 'gemini-3.8-flash-medium',
+    'gemini-3.1-flash-lite': 'gemini-3.8-flash-low',
+    'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-low',
+    'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-low',
+    'model_tier_flash_lite': 'gemini-3.8-flash-low',
+    'model-tier-flash-lite': 'gemini-3.8-flash-low',
     'claude-sonnet-5-5-medium': 'claude-sonnet-5-5',
     'claude-sonnet-5-5-high': 'claude-sonnet-5-5',
     'claude-sonnet-5-5': 'claude-sonnet-5-5',
@@ -66,10 +69,14 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     if (clean.includes('medium')) return 'gemini-4-argon-medium';
     return 'gemini-4-argon-high';
   }
-  if (clean.includes('flash') || clean.includes('pro')) return 'gemini-3.8-flash-tiered';
-  if (clean.includes('gpt')) return 'gemini-3.8-flash-tiered';
+  if (clean.includes('flash') || clean.includes('pro')) {
+    if (clean.includes('low')) return 'gemini-3.8-flash-low';
+    if (clean.includes('high')) return 'gemini-3.8-flash-high';
+    return 'gemini-3.8-flash-medium';
+  }
+  if (clean.includes('gpt')) return 'gemini-3.8-flash-medium';
 
-  return 'gemini-3.8-flash-tiered';
+  return 'gemini-3.8-flash-medium';
 }
 
 /**
@@ -81,6 +88,9 @@ export function normalizeGoogleModelId(modelName: string): string {
   let clean = modelName.replace(/^(?:models\/|[^/]+\/)/, '').trim().toLowerCase();
 
   const validModels = new Set([
+    'gemini-3.8-flash-low',
+    'gemini-3.8-flash-medium',
+    'gemini-3.8-flash-high',
     'gemini-3.8-flash-tiered',
     'gemini-4-argon-high',
     'gemini-4-argon-medium',
@@ -101,19 +111,22 @@ export function normalizeGoogleModelId(modelName: string): string {
     'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
     'gemini-4-argon-low': 'gemini-4-argon-low',
-    'gemini-3.8-flash': 'gemini-3.8-flash-tiered',
+    'gemini-3.8-flash-low': 'gemini-3.8-flash-low',
+    'gemini-3.8-flash-medium': 'gemini-3.8-flash-medium',
+    'gemini-3.8-flash-high': 'gemini-3.8-flash-high',
+    'gemini-3.8-flash': 'gemini-3.8-flash-medium',
     'gemini-3.8-flash-tiered': 'gemini-3.8-flash-tiered',
-    'gemini-2.5-flash-lite': 'gemini-3.8-flash-tiered',
-    'gemini-3-preview': 'gemini-3.8-flash-tiered',
-    'gemini-3-flash-preview': 'gemini-3.8-flash-tiered',
-    'gemini-3.6-flash': 'gemini-3.8-flash-tiered',
-    'gemini-3.1-flash-lite': 'gemini-3.8-flash-tiered',
-    'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-tiered',
-    'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-tiered',
-    'model_tier_flash_lite': 'gemini-3.8-flash-tiered',
-    'model-tier-flash-lite': 'gemini-3.8-flash-tiered',
-    'gemini-flash': 'gemini-3.8-flash-tiered',
-    'gemini-pro': 'gemini-3.8-flash-tiered',
+    'gemini-2.5-flash-lite': 'gemini-3.8-flash-low',
+    'gemini-3-preview': 'gemini-3.8-flash-medium',
+    'gemini-3-flash-preview': 'gemini-3.8-flash-medium',
+    'gemini-3.6-flash': 'gemini-3.8-flash-medium',
+    'gemini-3.1-flash-lite': 'gemini-3.8-flash-low',
+    'model_google_gemini_2_5_flash_lite': 'gemini-3.8-flash-low',
+    'model-google-gemini-2-5-flash-lite': 'gemini-3.8-flash-low',
+    'model_tier_flash_lite': 'gemini-3.8-flash-low',
+    'model-tier-flash-lite': 'gemini-3.8-flash-low',
+    'gemini-flash': 'gemini-3.8-flash-medium',
+    'gemini-pro': 'gemini-3.8-flash-medium',
     'claude-sonnet-5-5': 'claude-sonnet-5-5',
     'claude-opus-5-5': 'claude-opus-5-5',
     'claude-sonnet-4-6': 'claude-sonnet-4-6',
@@ -142,10 +155,12 @@ export function normalizeGoogleModelId(modelName: string): string {
   }
 
   if (clean.includes('pro') || clean.includes('flash') || clean.includes('gpt')) {
-    return 'gemini-3.8-flash-tiered';
+    if (clean.includes('low')) return 'gemini-3.8-flash-low';
+    if (clean.includes('high')) return 'gemini-3.8-flash-high';
+    return 'gemini-3.8-flash-medium';
   }
 
-  return 'gemini-3.8-flash-tiered';
+  return 'gemini-3.8-flash-medium';
 }
 
 /**

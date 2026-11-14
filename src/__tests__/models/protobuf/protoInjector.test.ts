@@ -482,5 +482,72 @@ describe('injectCustomModelsIntoUserStatus', () => {
     expect(modelIds).toContain('gemini-3.8-flash-tiered');
     expect(modelIds).not.toContain('claude-3-5-sonnet');
   });
+
+  it('suppresses native Claude and Flash entries when covered by pooled custom models while preserving Argon', () => {
+    const rawJson = JSON.stringify({
+      userStatus: {
+        cascadeModelConfigData: {
+          clientModelConfigs: [
+            { label: 'Claude Sonnet 4.6 (Thinking)', modelId: 'claude-sonnet-4-6' },
+            { label: 'Claude Opus 4.6 (Thinking)', modelId: 'claude-opus-4-6-thinking' },
+            { label: 'Gemini 4 Argon', modelId: 'gemini-4-argon' },
+            { label: 'Gemini 3.8 Flash', modelId: 'gemini-3.8-flash-tiered' },
+          ],
+          clientModelSorts: [
+            {
+              name: 'Recommended',
+              groups: [
+                {
+                  modelLabels: [
+                    'Claude Sonnet 4.6 (Thinking)',
+                    'Claude Opus 4.6 (Thinking)',
+                    'Gemini 4 Argon',
+                    'Gemini 3.8 Flash',
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const framedBuf = buildGrpcWebFrame(0, Buffer.from(rawJson, 'utf8'));
+    const pooledCustomModels = [
+      {
+        name: 'claude-sonnet-4-6',
+        displayName: 'Claude Sonnet 4.6 (Thinking)',
+        provider: 'google' as const,
+        apiKey: 'auto',
+        externalModelName: 'claude-sonnet-4-6',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      },
+      {
+        name: 'gemini-3.8-flash-tiered',
+        displayName: 'Gemini 3.8 Flash',
+        provider: 'google' as const,
+        apiKey: 'auto',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      },
+    ];
+
+    const result = injectCustomModelsIntoUserStatus(framedBuf, pooledCustomModels);
+
+    expect(result.modified).toBe(true);
+    const bodyLen = result.buffer.readUInt32BE(1);
+    const parsed = JSON.parse(result.buffer.subarray(5, 5 + bodyLen).toString('utf8'));
+    const configs = parsed.userStatus.cascadeModelConfigData.clientModelConfigs;
+
+    // Native Claude Sonnet and Gemini Flash should be suppressed, but Gemini 4 Argon must be preserved!
+    const labels = configs.map((c: any) => c.label);
+    expect(labels).toContain('Gemini 4 Argon');
+    expect(labels).not.toContain('Claude Sonnet 4.6 (Thinking)');
+    expect(labels).not.toContain('Gemini 3.8 Flash');
+
+    // And pooled models should be present with purple icon
+    expect(labels.some((l: string) => l.includes('🟣 ◆ Claude Sonnet 4.6 (Thinking) (Medium)'))).toBe(true);
+    expect(labels.some((l: string) => l.includes('🟣 ◆ Gemini 3.8 Flash (Medium)'))).toBe(true);
+  });
 });
 

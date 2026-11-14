@@ -30,8 +30,22 @@ export function resolveCloudCodeCustomModel(
       const normReq = normalizeCloudCodeModelId(cleanRequested);
       const matchedPool = googlePoolCandidates.filter((m) => {
         const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();
-        return mTarget === cleanRequested.toLowerCase() ||
-               (normReq && normalizeCloudCodeModelId(mTarget) === normReq);
+        if (mTarget === cleanRequested.toLowerCase()) return true;
+        const normTarget = normalizeCloudCodeModelId(mTarget);
+        if (normReq && normTarget === normReq) return true;
+        if (normReq.includes('flash') && (mTarget.includes('flash') || normTarget.includes('flash'))) return true;
+        if (normReq.includes('opus') && (mTarget.includes('opus') || normTarget.includes('opus'))) {
+          const is55Req = normReq.includes('5-5') || normReq.includes('5.5');
+          const is55Target = mTarget.includes('5-5') || mTarget.includes('5.5') || normTarget.includes('5-5');
+          return is55Req === is55Target;
+        }
+        if (normReq.includes('sonnet') && (mTarget.includes('sonnet') || normTarget.includes('sonnet'))) {
+          const is55Req = normReq.includes('5-5') || normReq.includes('5.5');
+          const is55Target = mTarget.includes('5-5') || mTarget.includes('5.5') || normTarget.includes('5-5');
+          return is55Req === is55Target;
+        }
+        if (normReq.includes('argon') && (mTarget.includes('argon') || normTarget.includes('argon'))) return true;
+        return false;
       });
       let effectivePool = matchedPool;
       if (inheritedEffort && matchedPool.some((m) => (m._effortSuffix || m.reasoningEffort || '').toLowerCase().includes(inheritedEffort))) {

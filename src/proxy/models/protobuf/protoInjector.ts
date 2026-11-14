@@ -293,10 +293,11 @@ export function injectCustomModelsIntoResponse(
     const fieldMapping = extractFieldMapping(sampleEntry.value);
     const existing = extractExistingModelKeys(msgBody, modelTag);
 
-    // Strip any obsolete or explicitly disabled models already present in msgBody
+    // Strip any obsolete, explicitly disabled, or pooled-duplicate models already present in msgBody
     const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
     const keptBodyParts: Buffer[] = [];
     let strippedAnyNative = false;
+    const pooledCategories = getPooledBaseModelCategories(customModels);
 
     for (const f of rawFields) {
       if (f.tag === modelTag && f.raw) {
@@ -311,7 +312,8 @@ export function injectCustomModelsIntoResponse(
         }
         const isObsolete = isObsoleteModel(idStr, labelStr);
         const isDisabled = isModelOrLabelDisabled(idStr, labelStr, disabledModelIds);
-        if (isObsolete || isDisabled) {
+        const isCoveredByPool = isNativeModelCoveredByPool(idStr, labelStr, pooledCategories);
+        if (isObsolete || isDisabled || isCoveredByPool) {
           strippedAnyNative = true;
           continue;
         }
@@ -489,13 +491,15 @@ function injectCustomModelsIntoUserStatusJson(
     const keptConfigs: any[] = [];
     const strippedLabels = new Set<string>();
     let strippedAnyJson = false;
+    const pooledCategories = getPooledBaseModelCategories(customModels);
 
     for (const c of cascade.clientModelConfigs) {
       const label = (c.label || '').trim();
       const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
       const isObsolete = isObsoleteModel(modelId, label);
       const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
-      if (isObsolete || isDisabled) {
+      const isCoveredByPool = isNativeModelCoveredByPool(modelId, label, pooledCategories);
+      if (isObsolete || isDisabled || isCoveredByPool) {
         strippedAnyJson = true;
         if (label) {
           strippedLabels.add(label);
@@ -835,8 +839,9 @@ export function injectCustomModelsIntoUserStatus(
     const newCascadeParts: Buffer[] = [];
     let strippedAnyCascade = false;
     const strippedLabels = new Set<string>();
+    const pooledCategories = getPooledBaseModelCategories(customModels);
 
-    // 1. Keep existing client_model_configs (filtering out obsolete or disabled ones)
+    // 1. Keep existing client_model_configs (filtering out obsolete, disabled, or pooled-duplicate ones)
     for (const f of cascadeFields) {
       if (f.fieldNum === 1 && f.raw) {
         const sub = parseProtoRaw(f.raw, 0, f.raw.length);
@@ -850,7 +855,8 @@ export function injectCustomModelsIntoUserStatus(
         }
         const isObsolete = isObsoleteModel(modelId, label);
         const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
-        if (isObsolete || isDisabled) {
+        const isCoveredByPool = isNativeModelCoveredByPool(modelId, label, pooledCategories);
+        if (isObsolete || isDisabled || isCoveredByPool) {
           strippedAnyCascade = true;
           if (label) {
             strippedLabels.add(label);

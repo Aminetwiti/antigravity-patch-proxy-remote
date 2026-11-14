@@ -21,8 +21,7 @@ import {
   flattenAllToolCallsToText,
   sanitizeUnsignedToolCalls,
 } from '../../../../core/shared';
-import { writeSafeSseChunk, injectAntiHallucinationInstruction } from '../../../stream/streamPipeline';
-import { safeWriteHead } from '../../../../http/server/httpUtils';
+import { injectAntiHallucinationInstruction } from '../../../stream/streamPipeline';
 import {
   getSessionModelFallback,
   setSessionModelFallback,
@@ -117,25 +116,6 @@ export async function attemptCrossModelFallback(
     }
 
     const sessionKey = convId || sessId;
-    const existingFallback = sessionKey ? getSessionModelFallback(sessionKey) : undefined;
-    const alreadyNotified = existingFallback?.notified === true;
-
-    if (process.env.AG_ENABLE_FALLBACK_NOTICE === '1' && isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
-      if (!res.headersSent) {
-        safeWriteHead(res, 200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-        });
-      }
-      const isClaude = currentBase.toLowerCase().includes('claude');
-      const fbNotice = isClaude
-        ? `> 🔄 **Quota Claude atteint** — Poursuite automatique avec **${fallbackModel}**.\n\n`
-        : `> 🔄 **Modèle temporairement indisponible** — Poursuite automatique avec **${fallbackModel}**.\n\n`;
-      writeSafeSseChunk(res, {
-        response: { candidates: [{ content: { parts: [{ text: fbNotice }], role: 'model' }, index: 0 }] },
-      });
-    }
 
     try {
       const nextAttempted = new Set(attemptedModels);
