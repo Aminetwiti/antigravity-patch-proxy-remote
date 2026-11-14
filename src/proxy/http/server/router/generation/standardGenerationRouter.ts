@@ -54,7 +54,7 @@ export async function handleStandardGenerationRoute(
       const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();
       return mTarget === cleanMatched || (normMatched && normalizeCloudCodeModelId(mTarget) === normMatched);
     });
-    if (matchedPool.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
+    if (matchedPool.length > 0 && process.env.AG_POOL_NATIVE_MODELS === '1') {
       log.info(`[Proxy] Routing native model [${matchedModelName}] on direct URL through Google multi-account pool.`);
       matchedCustomModel = selectBestModelByQuota(matchedPool, customModels);
     } else {

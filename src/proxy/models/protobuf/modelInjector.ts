@@ -137,7 +137,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const id = t?.name || t?.model || t?.id || '';
       const disp = t?.displayName || '';
       if (isObsoleteModel(id, disp)) return false;
-      if (pooledBaseIds.size > 0) {
+      if (pooledBaseIds.size > 0 && process.env.AG_SUPPRESS_NATIVE_MODELS === '1') {
         const rawId = String(id).replace(/^models\//, '').toLowerCase();
         const normId = normalizeCloudCodeModelId(rawId)?.toLowerCase() || '';
         if (pooledBaseIds.has(rawId) || pooledBaseIds.has(normId)) return false;
@@ -175,7 +175,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
       const isNativeModel = typeof innerModel === 'string' && innerModel.startsWith('MODEL_');
       if (isNativeModel || !isObsoleteModel(k, disp)) {
         // Suppress native or duplicate model covered by an auto-pool entry
-        if (pooledBaseIds.size > 0) {
+        if (pooledBaseIds.size > 0 && process.env.AG_SUPPRESS_NATIVE_MODELS === '1') {
           const kLower = k.toLowerCase().replace(/^models\//, '');
           const kNorm = normalizeCloudCodeModelId(kLower)?.toLowerCase() || '';
           if (pooledBaseIds.has(kLower) || pooledBaseIds.has(kNorm)) continue;

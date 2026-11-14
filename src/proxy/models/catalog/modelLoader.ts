@@ -329,7 +329,7 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
             ? (acc.projectId && acc.projectId !== 'aicode-consumers' ? acc.projectId : 'gemini-cli-users')
             : (acc.projectId || p.projectId),
           quotas: acc.quotas || p.quotas,
-          _poolOnly: (isAiStudio || isGeminiCli) ? true : undefined,
+          _poolOnly: (isGoogle && !isAiStudio) || isGeminiCli ? true : undefined,
         };
       const placeholderId = generateModelPlaceholderId(partialModel);
 
