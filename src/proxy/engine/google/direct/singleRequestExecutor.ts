@@ -104,8 +104,6 @@ export function executeGoogleCloudCodeRequest(
         agent: getHttpsAgent({ host: targetHost }),
       };
 
-      log.info(`[SingleExec Dispatch] URL=${parsedUrl.toString()} servername=${targetHost} auth=${String(headers['authorization']).slice(0, 20)}... bodyLen=${reqBody.length}`);
-
       proxyReq = https.request(parsedUrl, options, (proxyRes) => {
         if (responseClaimer) {
           responseClaimer.registerAbort(traceId, () => {

@@ -259,6 +259,12 @@ async function main() {
   const repoIpcHandlers = path.join(repoDist, 'ipcHandlers.js');
   if (fs.existsSync(repoIpcHandlers)) {
     fs.copyFileSync(repoIpcHandlers, path.join(buildDir, 'dist', 'customIpcHandlers.js'));
+  } else {
+    fs.writeFileSync(
+      path.join(buildDir, 'dist', 'customIpcHandlers.js'),
+      "module.exports = require('./ipc/index');\n",
+      'utf8'
+    );
   }
 
   // Augment dist/constants.js NON-DESTRUCTIVELY:

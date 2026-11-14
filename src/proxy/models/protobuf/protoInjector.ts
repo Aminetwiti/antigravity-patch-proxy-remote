@@ -75,6 +75,81 @@ export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabl
   return false;
 }
 
+export interface PooledBaseCategories {
+  hasFlash: boolean;
+  hasClaudeSonnet: boolean;
+  hasClaudeOpus: boolean;
+}
+
+export function getPooledBaseModelCategories(customModels?: CustomModel[]): PooledBaseCategories {
+  let hasFlash = false;
+  let hasClaudeSonnet = false;
+  let hasClaudeOpus = false;
+
+  for (const m of customModels || []) {
+    const isGoogle =
+      m.provider === 'google' ||
+      m.provider === 'google-gemini' ||
+      m.provider === 'gemini' ||
+      m.provider === 'gemini-cli' ||
+      m.apiKey === 'auto' ||
+      (typeof m.name === 'string' && m.name.includes(':auto-pool'));
+    if (!isGoogle) continue;
+
+    const raw = (m.externalModelName || m.name || '').toLowerCase();
+    const disp = (m.displayName || '').toLowerCase();
+
+    if (raw.includes('flash') || disp.includes('flash')) {
+      hasFlash = true;
+    }
+    if (raw.includes('claude') || disp.includes('claude')) {
+      if (raw.includes('opus') || disp.includes('opus')) {
+        hasClaudeOpus = true;
+      } else {
+        hasClaudeSonnet = true;
+      }
+    }
+  }
+
+  return { hasFlash, hasClaudeSonnet, hasClaudeOpus };
+}
+
+export function isNativeModelCoveredByPool(
+  modelId?: string,
+  label?: string,
+  pooled?: PooledBaseCategories,
+): boolean {
+  if (!pooled || (!pooled.hasFlash && !pooled.hasClaudeSonnet && !pooled.hasClaudeOpus)) {
+    return false;
+  }
+  const mid = (modelId || '').trim();
+  const lbl = (label || '').trim();
+
+  // Custom injected placeholders or items with status icons are NOT native
+  if (/model_placeholder_/i.test(mid)) return false;
+  if (/^[🟢🟡🔴🟣⭐]/.test(lbl)) return false;
+
+  const mLower = mid.toLowerCase().replace(/^models\//, '');
+  const lLower = lbl.toLowerCase();
+
+  // Strict: NEVER suppress Argon (Argon is not pooled across accounts)
+  if (mLower.includes('argon') || lLower.includes('argon')) {
+    return false;
+  }
+
+  if (pooled.hasClaudeSonnet && ((lLower.includes('claude') && lLower.includes('sonnet')) || mLower.includes('claude-sonnet') || mLower.includes('claude-3-5-sonnet'))) {
+    return true;
+  }
+  if (pooled.hasClaudeOpus && ((lLower.includes('claude') && lLower.includes('opus')) || mLower.includes('claude-opus'))) {
+    return true;
+  }
+  if (pooled.hasFlash && (mLower.includes('flash') || lLower.includes('flash'))) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Result of injecting custom models into a GetAvailableModels protobuf response.
  */

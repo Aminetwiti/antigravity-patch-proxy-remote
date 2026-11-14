@@ -135,22 +135,20 @@ export function startProxyServer(requestHandler: RequestHandler): Promise<number
                 probeRes.on('data', (chunk) => { body += chunk; });
                 probeRes.on('end', () => {
                   const isStubHeader = probeRes.headers['x-proxy-stub'] === '1';
-                  let stubPid: number | null = null;
+                  let stalePid: number | null = null;
                   try {
                     const parsed = JSON.parse(body);
-                    if (parsed.stub || isStubHeader) {
-                      stubPid = typeof parsed.pid === 'number' ? parsed.pid : null;
+                    if (parsed.stub || isStubHeader || parsed.status === 'ok' || typeof parsed.pid === 'number') {
+                      stalePid = typeof parsed.pid === 'number' ? parsed.pid : null;
                     }
                   } catch (_) {}
 
-                  if (isStubHeader || stubPid) {
-                    log.warn(`[Proxy] Detected proxy-stub (pid=${stubPid}) occupying primary port ${portCandidates[0]}. Terminating stub...`);
-                    if (stubPid && stubPid !== process.pid) {
-                      try {
-                        process.kill(stubPid, 'SIGKILL');
-                      } catch (_) {
-                        try { process.kill(stubPid); } catch (_) {}
-                      }
+                  if (stalePid && stalePid !== process.pid) {
+                    log.warn(`[Proxy] Detected stale proxy/stub (pid=${stalePid}) occupying primary port ${portCandidates[0]}. Terminating stale process...`);
+                    try {
+                      process.kill(stalePid, 'SIGKILL');
+                    } catch (_) {
+                      try { process.kill(stalePid); } catch (_) {}
                     }
                   }
                   setTimeout(callback, 250);
