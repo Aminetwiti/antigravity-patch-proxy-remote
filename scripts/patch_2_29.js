@@ -257,7 +257,10 @@ async function main() {
   ];
 
   for (const file of customFiles) {
-    const src = path.join(repoDist, file);
+    let src = path.join(repoDist, file);
+    if (!fs.existsSync(src) && fs.existsSync(path.join(repoDist, 'ipc', file))) {
+      src = path.join(repoDist, 'ipc', file);
+    }
     const dst = path.join(buildDir, 'dist', file);
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, dst);

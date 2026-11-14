@@ -72,17 +72,22 @@ export async function executeGoogleCloudCodeWithPool(
   const state = createInitialPoolLoopState();
   const totalAttempts = sortedAccounts.length;
   const initialHealthyCount = sortedAccounts.filter((a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0).length;
+  const allowOptimisticProbe = initialHealthyCount === 0 && sortedAccounts.length > 0;
 
   if (initialHealthyCount === 0 && sortedAccounts.length > 0) {
     state.lastStatus = 429;
     state.lastErrorText = `All ${sortedAccounts.length} accounts in Google Cloud Code pool are unavailable for ${modelFamily}`;
+    if (allowOptimisticProbe) {
+      log.info(`[Proxy] ⚡ All accounts marked exhausted/in cooldown for ${modelFamily}. Engaging optimistic probe on top candidate(s) to verify actual upstream status.`);
+    }
   }
 
   const poolLoopStartTime = Date.now();
   const useStickySessions = process.env.AG_STICKY_GOOGLE_ACCOUNTS !== '0';
 
   for (let i = 0; i < sortedAccounts.length && state.networkAttemptCount < totalAttempts; i++) {
-    if (initialHealthyCount === 0) break;
+    if (initialHealthyCount === 0 && !allowOptimisticProbe) break;
+    if (allowOptimisticProbe && state.networkAttemptCount >= 2) break;
     if (Date.now() - poolLoopStartTime >= MAX_POOL_LOOP_DURATION_MS) {
       if (!state.lastStatus || state.lastStatus === 200) state.lastStatus = 504;
       state.lastErrorText = 'Account pool loop safety budget expired before upstream response';
@@ -92,7 +97,7 @@ export async function executeGoogleCloudCodeWithPool(
     const candidate = sortedAccounts[i];
     const candidateName = candidate.accountEmail || candidate.accountName || candidate.displayName || candidate.name;
     if ((candidate as any).enabled === false || (candidate as any).isValidationRequired || (candidate as any).status === 'validation_required') continue;
-    if (isAccountInCooldown(candidate, modelFamily) || getModelQuotaScore(candidate, modelFamily) <= 0) continue;
+    if (!allowOptimisticProbe && (isAccountInCooldown(candidate, modelFamily) || getModelQuotaScore(candidate, modelFamily) <= 0)) continue;
 
     const skipSaturated = await shouldSkipSaturatedCandidate(candidate, modelFamily, fallbackDepth, boundAccount, sortedAccounts, state.busyCandidateAccounts);
     if (skipSaturated) {

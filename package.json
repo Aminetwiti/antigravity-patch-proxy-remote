@@ -14,7 +14,7 @@
   ],
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs'); fs.mkdirSync('dist/config', {recursive:true}); fs.copyFileSync('src/config/providers.json', 'dist/config/providers.json'); fs.copyFileSync('src/ui/rendererHook.js', 'dist/rendererHook.js'); if (fs.existsSync('src/ui/chatUiEnhancer.js')) fs.copyFileSync('src/ui/chatUiEnhancer.js', 'dist/chatUiEnhancer.js');\"",
+    "build": "tsc && node -e \"const fs=require('fs'); fs.mkdirSync('dist/config', {recursive:true}); fs.copyFileSync('src/config/providers.json', 'dist/config/providers.json'); fs.copyFileSync('src/ui/rendererHook.js', 'dist/rendererHook.js'); if (fs.existsSync('src/ui/chatUiEnhancer.js')) fs.copyFileSync('src/ui/chatUiEnhancer.js', 'dist/chatUiEnhancer.js'); if (fs.existsSync('dist/ipc/customIpcBridge.js')) fs.copyFileSync('dist/ipc/customIpcBridge.js', 'dist/customIpcBridge.js');\"",
     "watch": "tsc --watch",
     "lint": "tsc --noEmit",
     "test": "npm run build && vitest run",
