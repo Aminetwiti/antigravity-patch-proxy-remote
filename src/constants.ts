@@ -131,13 +131,13 @@ export const DEFAULT_MAX_BODY_SIZE = getEnvInt(
 
 
 /** Timeout for Google proxy requests (default: 90 seconds). */
-export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 120_000);
+export const GOOGLE_PROXY_TIMEOUT_MS = getEnvInt('AG_GOOGLE_PROXY_TIMEOUT_MS', 90_000);
 
 /** Timeout for waiting for initial response headers in multi-account pools (default: 25 seconds). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 35_000);
+export const GOOGLE_POOL_HEADER_TIMEOUT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_MS', 25_000);
 
 /** Timeout for waiting for initial response headers on Flash streaming models in pools (default: 10 seconds to cut black holes without premature drops on network jitter or prompt prefill). */
-export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 20_000);
+export const GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_FLASH_MS', 10_000);
 
 /** Timeout for waiting for initial response headers on large payloads or thinking models (default: 65 seconds). */
 export const GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS = getEnvInt('AG_GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS', 65_000);
@@ -542,7 +542,7 @@ export function isObsoleteModel(idOrName?: string, displayName?: string): boolea
   if (/\bgemini[-_\s]*(?:3(?:\.0)?(?:-pro|-flash|\b)|pro-agent)/i.test(str) && !str.includes('3.8')) return true;
 
   // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
-  if ((/\bgpt[-_\s]*(?:3\.5|4o|4|3)\b/i.test(str) || str.startsWith('gpt-')) && !str.includes('oss')) return true;
+  if (/\bgpt[-_\s]*(?:3\.5|4o|4|3)\b/i.test(str) || str.startsWith('gpt-')) return true;
 
   // Old Claude 3.5
   if (/claude[-_\s]*3[-_\s]*5/i.test(str)) return true;
