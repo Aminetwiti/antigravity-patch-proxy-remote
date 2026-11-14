@@ -157,6 +157,12 @@ export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS
 /** Speculative hedged request delay for streaming pools (default: 2,500ms). If no headers arrive in 2.5s, hedge with next candidate. */
 export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2_500);
 
+/** Speculative hedged request delay for Flash / Thinking models (default: 20,000ms). Prevents premature speculation during upstream TTFT degradation. */
+export const FLASH_HEDGED_DELAY_MS = getEnvInt('AG_FLASH_HEDGED_DELAY_MS', 20_000);
+
+/** Base jitter delay (ms) applied during account rotation on quota exhaustion / rate limit (default: 0). Prevents WAF failover correlation. */
+export const ROTATION_JITTER_MS = getEnvInt('AG_ROTATION_JITTER_MS', 0);
+
 /** Number of consecutive 503 Capacity Unavailable errors across different pool accounts before cascading to Claude (default: 2). */
 export const CAPACITY_503_CASCADE_THRESHOLD = getEnvInt('AG_CAPACITY_503_CASCADE_THRESHOLD', 10);
 

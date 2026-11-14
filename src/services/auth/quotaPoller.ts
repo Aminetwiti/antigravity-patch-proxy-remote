@@ -799,6 +799,13 @@ export async function pollAllGoogleQuotas(
           log.info(
             `[GoogleAuth] ${healthRemark} Live quota for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, week=${quota.geminiWeeklyPct}% | Claude 5h=${quota.claudeFiveHourPct}%, week=${quota.claudeWeeklyPct}%`
           );
+          // Auto-recover exhausted accounts when rolling 5-hour quota recovers above 0
+          if ((quota.geminiFiveHourPct > 0 || quota.claudeFiveHourPct > 0) && email) {
+            try {
+              const { clearAccountQuotaExhaustedFromDisk } = require('../../proxy/resilience/google/identity/diskPersistence');
+              clearAccountQuotaExhaustedFromDisk(email);
+            } catch (_) {}
+          }
         } else {
           log.debug(
             `[GoogleAuth] Live quota unchanged for ${email || 'account'}: Gemini 5h=${quota.geminiFiveHourPct}%, week=${quota.geminiWeeklyPct}% | Claude 5h=${quota.claudeFiveHourPct}%, week=${quota.claudeWeeklyPct}%`

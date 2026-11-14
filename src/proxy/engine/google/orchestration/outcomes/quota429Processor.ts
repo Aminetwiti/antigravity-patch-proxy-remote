@@ -20,6 +20,7 @@ import {
   type AccountLiveQuota,
 } from '../../../../../services/auth/googleAuth';
 import { sessionAffinities } from '../../../../resilience/pools/sessionAffinities';
+import { ROTATION_JITTER_MS } from '../../../../../constants';
 
 export async function processOutcome429(
   candidate: CustomModel,
@@ -151,7 +152,8 @@ export async function processOutcome429(
     const remainingHealthyWithQuota = sortedAccounts.slice(candidateIndex + 1).some(
       (c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 20,
     );
-    if (state.consecutiveQuotaExhausted >= 3 && !remainingHealthyWithQuota && sortedAccounts.length > 3) {
+    const fastFailThreshold = Math.max(3, Math.ceil(sortedAccounts.length * 0.4));
+    if (state.consecutiveQuotaExhausted >= fastFailThreshold && !remainingHealthyWithQuota && sortedAccounts.length > 3) {
       state.lastStatus = 429;
       state.lastErrorText = outcome.error || `HTTP 429 (${decision.reason})`;
       log.warn(`[Proxy] Model ${targetModel} hit quota exhaustion across ${state.consecutiveQuotaExhausted} consecutive accounts. Fast-failing pool.`);
@@ -191,7 +193,23 @@ export async function processOutcome429(
 
   if (candidateIndex + 1 < totalAttempts) {
     if (isGenuineQuotaExhaustion || decision.category === 'quota_exhausted') {
-      log.info(`[Proxy] ⚡ Quota exhausted on [${candidateName}] (${modelFamily}). Immediate 0ms rotation.`);
+      const baseJitter = ROTATION_JITTER_MS;
+      const jitterMs =
+        baseJitter > 0
+          ? baseJitter + Math.floor(Math.random() * 200)
+          : state.consecutiveQuotaExhausted > 2
+          ? 400 + Math.floor(Math.random() * 300)
+          : 0;
+
+      if (jitterMs > 0 && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
+        log.info(
+          `[Proxy] ⚡ Quota exhausted on [${candidateName}] (${modelFamily}). Anti-cascade jitter ${jitterMs}ms before next account.`,
+        );
+        await new Promise((r) => setTimeout(r, jitterMs));
+        if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
+      } else {
+        log.info(`[Proxy] ⚡ Quota exhausted on [${candidateName}] (${modelFamily}). Immediate 0ms rotation.`);
+      }
       return { breakLoop: false, continueNext: true };
     }
 

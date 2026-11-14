@@ -562,12 +562,16 @@ describe('Google Multi-Account Pool & Failover', () => {
       const busyScore = getAccountDynamicScore(acc2);
       expect(busyScore).toBe(baseScore - 20);
 
-      // Saturated account at max concurrent requests (>= MAX_CONCURRENT_PER_ACCOUNT, default 2)
-      incrementAccountInFlight(acc2);
+      // Saturated account at max concurrent requests (>= MAX_CONCURRENT_PER_ACCOUNT)
+      while (getAccountInFlight(acc2) < MAX_CONCURRENT_PER_ACCOUNT) {
+        incrementAccountInFlight(acc2);
+      }
       expect(getAccountInFlight(acc2)).toBe(MAX_CONCURRENT_PER_ACCOUNT);
       expect(getAccountDynamicScore(acc2)).toBe(0);
 
-      decrementAccountInFlight(acc2);
+      while (getAccountInFlight(acc2) > 1) {
+        decrementAccountInFlight(acc2);
+      }
       expect(getAccountDynamicScore(acc2)).toBe(busyScore);
 
       decrementAccountInFlight(acc2);
@@ -621,14 +625,16 @@ describe('Google Multi-Account Pool & Failover', () => {
 
     it('times out and resolves to false if all accounts remain saturated', async () => {
       const acc = mockGoogleModels[0];
-      incrementAccountInFlight(acc);
-      incrementAccountInFlight(acc);
+      while (getAccountInFlight(acc) < MAX_CONCURRENT_PER_ACCOUNT) {
+        incrementAccountInFlight(acc);
+      }
 
       const hasSlot = await waitForAccountSlot([acc], 'gemini', 50);
       expect(hasSlot).toBe(false);
 
-      decrementAccountInFlight(acc);
-      decrementAccountInFlight(acc);
+      while (getAccountInFlight(acc) > 0) {
+        decrementAccountInFlight(acc);
+      }
     });
   });
 

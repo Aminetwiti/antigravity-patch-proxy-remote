@@ -20,7 +20,7 @@ import {
   resolveGoogleProjectId,
 } from '../../../../resilience/googlePool';
 import { recordSuccess } from '../../../../resilience/circuitBreaker';
-import { GOOGLE_HOSTS, HEDGED_REQUEST_DELAY_MS } from '../../../../../constants';
+import { GOOGLE_HOSTS, HEDGED_REQUEST_DELAY_MS, FLASH_HEDGED_DELAY_MS } from '../../../../../constants';
 
 export interface HedgedDispatchParams {
   req: http.IncomingMessage;
@@ -91,7 +91,7 @@ export async function dispatchWithHedge(
   );
 
   const baseHedgeDelay = isFlashThinkingHedgeable
-    ? Math.max(HEDGED_REQUEST_DELAY_MS, 15_000)
+    ? Math.max(HEDGED_REQUEST_DELAY_MS, FLASH_HEDGED_DELAY_MS)
     : isContextualPayload
     ? Math.max(HEDGED_REQUEST_DELAY_MS, 8_000)
     : HEDGED_REQUEST_DELAY_MS;
