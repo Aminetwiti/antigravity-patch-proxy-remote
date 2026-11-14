@@ -6,7 +6,18 @@ import {
   parsePbtxt,
   encodeAnnotationsField,
   stripProtobufField,
+  encodeVarint,
+  readVarint,
 } from './protoUtils';
+
+export {
+  ParsedAnnotation,
+  parsePbtxt,
+  encodeAnnotationsField,
+  stripProtobufField,
+  encodeVarint,
+  readVarint,
+};
 
 export interface ReconcileResult {
   ok: boolean;

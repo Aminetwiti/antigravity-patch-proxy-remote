@@ -51,10 +51,11 @@ Thumbs.db
 
 # Development logs & diagnostic dumps
 *.log
-log
-logs/
-logs/*.log
-logs/*.txt
+/log
+/logs/
+/logs/*.log
+/logs/*.txt
+!ag-doctor-ui/src/renderer/components/logs/
 build_log.txt
 diag_*.txt
 eslint_out.txt

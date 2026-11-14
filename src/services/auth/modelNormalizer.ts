@@ -7,7 +7,7 @@ import { getLiveAccountQuota } from './quotaPoller';
  */
 export function normalizeCloudCodeModelId(modelId: string): string {
   if (!modelId) return 'gemini-3.8-flash-tiered';
-  const clean = modelId.replace(/^models\//, '').trim();
+  const clean = modelId.replace(/^models\//, '').trim().toLowerCase();
 
   const validCloudCodeModels = new Set([
     'gemini-3.8-flash-tiered',
