@@ -269,10 +269,12 @@ async function main() {
 
   // Copy root runner and custom IPC handlers
   fs.copyFileSync(path.join(repoRoot, 'proxy-runner.js'), path.join(buildDir, 'proxy-runner.js'));
-  const repoIpcHandlers = path.join(repoDist, 'ipcHandlers.js');
-  if (fs.existsSync(repoIpcHandlers)) {
-    fs.copyFileSync(repoIpcHandlers, path.join(buildDir, 'dist', 'customIpcHandlers.js'));
-  }
+  // Ensure dist/customIpcHandlers.js cleanly points to modular dist/ipc/index.js
+  fs.writeFileSync(
+    path.join(buildDir, 'dist', 'customIpcHandlers.js'),
+    "module.exports = require('./ipc/index');\n",
+    'utf8'
+  );
 
   // Copy modular IPC sub-modules and their dependencies (ipc/, compat/, shared/, ui/)
   // ipc/ and compat/ are 100% custom — safe to overwrite

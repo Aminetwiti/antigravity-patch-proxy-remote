@@ -36,9 +36,23 @@ export function registerCustomIpcHandlers(storageManager: any): void {
   };
 
   try {
-    // Require our custom handlers specifically (customIpcHandlers.js) to avoid any
-    // circular dependency with the official ipcHandlers.js
-    const customHandlersModule = require('./customIpcHandlers');
+    // Require custom handlers across both flat (dist/) and nested (dist/ipc/) structures
+    let customHandlersModule: any;
+    const candidatePaths = [
+      './ipc/index',
+      './ipc',
+      './index',
+      './handlers',
+      './customIpcHandlers',
+    ];
+    for (const p of candidatePaths) {
+      try {
+        customHandlersModule = require(p);
+        if (customHandlersModule && typeof customHandlersModule.registerIpcHandlers === 'function') {
+          break;
+        }
+      } catch (_) {}
+    }
     if (customHandlersModule && typeof customHandlersModule.registerIpcHandlers === 'function') {
       customHandlersModule.registerIpcHandlers(storageManager);
     }

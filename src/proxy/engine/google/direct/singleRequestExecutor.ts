@@ -51,6 +51,7 @@ export function executeGoogleCloudCodeRequest(
     const finish = (outcome: GoogleRequestOutcome) => {
       if (settled) return;
       settled = true;
+      log.info(`[SingleExec] Request finished for ${modelName}: status=${outcome.statusCode}, success=${outcome.success}, error=${outcome.error || 'none'}`);
       try {
         if (typeof res?.off === 'function') res.off('close', onClientClose);
       } catch (_) {}

@@ -211,7 +211,7 @@ export async function dispatchWithHedge(
     if (hedgeTimer) clearTimeout(hedgeTimer);
   } else {
     if (candidate1Settled && candidate1Result && !candidate1Result.success) {
-      log.info(`[Proxy] Candidate [${candidateName}] did not succeed. Awaiting speculative hedged candidate in flight...`);
+      log.info(`[Proxy] Candidate [${candidateName}] did not succeed (status=${candidate1Result.statusCode}, err=${candidate1Result.error || 'none'}). Awaiting speculative hedged candidate in flight...`);
       const hedgeOutcome = await hedgePromise;
       outcome = hedgeOutcome && hedgeOutcome.success ? hedgeOutcome : firstOutcome;
     } else {
