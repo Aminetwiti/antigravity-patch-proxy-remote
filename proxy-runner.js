@@ -238,7 +238,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    const reconciler = require('./dist/services/summaryReconciler');
+    const reconciler = require('./dist/services/reconciliation/summaryReconciler');
     if (typeof reconciler.reconcileSummariesOnBoot === 'function') {
       const recRes = reconciler.reconcileSummariesOnBoot();
       w('runner: reconcileSummariesOnBoot executed: ' + JSON.stringify(recRes));

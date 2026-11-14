@@ -206,6 +206,7 @@ async function main() {
     'i18n',
     'wellKnown',
     'ipc',
+    'compat',
     'preload',
     'ui',
     'proxyGateway',
@@ -746,7 +747,7 @@ try {
 
   // Reconcile and clean conversation summaries (prevent archived resurrect)
   try {
-    const reconciler = require('../dist/services/summaryReconciler');
+    const reconciler = require('../dist/services/reconciliation/summaryReconciler');
     if (typeof reconciler.reconcileSummariesOnBoot === 'function') {
       const recRes = reconciler.reconcileSummariesOnBoot();
       console.log('[patch_2_29] Reconciled summaries: archived=' + recRes.reconciledArchivedRawCount + ', fts=' + recRes.reconciledFtsCount + ', scrubbed=' + recRes.scrubbedStorageKeysCount);
