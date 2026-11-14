@@ -279,7 +279,7 @@ if (logsMinimapCanvas) {
 
 let logsInspectorInstance: LogInspectorDrawer | null = null;
 if (logsInspectorDrawerEl) {
-  logsInspectorInstance = new LogInspectorDrawer(logsInspectorDrawerEl, (actionId) => {
+  logsInspectorInstance = new LogInspectorDrawer(logsInspectorDrawerEl, (actionId: string) => {
     if (actionId === 'nav-google-accounts') {
       const btn = $('#nav-tab-google-accounts') as HTMLButtonElement | null;
       btn?.click();
