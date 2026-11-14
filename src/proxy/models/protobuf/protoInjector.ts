@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Protobuf injection logic for the GetAvailableModels response.
  * Pure functions — no I/O, no side effects, fully testable.
  */
@@ -75,84 +75,6 @@ export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabl
   return false;
 }
 
-export interface PooledBaseCategories {
-  hasFlash: boolean;
-  hasClaudeSonnet: boolean;
-  hasClaudeOpus: boolean;
-}
-
-export function getPooledBaseModelCategories(customModels?: CustomModel[]): PooledBaseCategories {
-  let hasFlash = false;
-  let hasClaudeSonnet = false;
-  let hasClaudeOpus = false;
-
-  for (const m of customModels || []) {
-    const isGoogle =
-      m.provider === 'google' ||
-      m.provider === 'google-gemini' ||
-      m.provider === 'gemini' ||
-      m.provider === 'gemini-cli' ||
-      m.apiKey === 'auto' ||
-      (typeof m.name === 'string' && m.name.includes(':auto-pool'));
-    if (!isGoogle) continue;
-
-    const raw = (m.externalModelName || m.name || '').toLowerCase();
-    const disp = (m.displayName || '').toLowerCase();
-
-    if (raw.includes('flash') || disp.includes('flash')) {
-      hasFlash = true;
-    }
-    if (raw.includes('claude') || disp.includes('claude')) {
-      if (raw.includes('opus') || disp.includes('opus')) {
-        hasClaudeOpus = true;
-      } else {
-        hasClaudeSonnet = true;
-      }
-    }
-  }
-
-  return { hasFlash, hasClaudeSonnet, hasClaudeOpus };
-}
-
-export function isNativeModelCoveredByPool(
-  modelId?: string,
-  label?: string,
-  pooled?: PooledBaseCategories,
-): boolean {
-  if (process.env.AG_SUPPRESS_NATIVE_MODELS !== '1') {
-    return false;
-  }
-  if (!pooled || (!pooled.hasFlash && !pooled.hasClaudeSonnet && !pooled.hasClaudeOpus)) {
-    return false;
-  }
-  const mid = (modelId || '').trim();
-  const lbl = (label || '').trim();
-
-  // Custom injected placeholders or items with status icons are NOT native
-  if (/model_placeholder_/i.test(mid)) return false;
-  if (/^[🟢🟡🔴🟣⭐]/.test(lbl)) return false;
-
-  const mLower = mid.toLowerCase().replace(/^models\//, '');
-  const lLower = lbl.toLowerCase();
-
-  // Strict: NEVER suppress Argon (Argon is not pooled across accounts)
-  if (mLower.includes('argon') || lLower.includes('argon')) {
-    return false;
-  }
-
-  if (pooled.hasClaudeSonnet && ((lLower.includes('claude') && lLower.includes('sonnet')) || mLower.includes('claude-sonnet') || mLower.includes('claude-3-5-sonnet'))) {
-    return true;
-  }
-  if (pooled.hasClaudeOpus && ((lLower.includes('claude') && lLower.includes('opus')) || mLower.includes('claude-opus'))) {
-    return true;
-  }
-  if (pooled.hasFlash && (mLower.includes('flash') || lLower.includes('flash'))) {
-    return true;
-  }
-
-  return false;
-}
-
 /**
  * Result of injecting custom models into a GetAvailableModels protobuf response.
  */
@@ -184,7 +106,7 @@ export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResul
   const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
   const star = isFav ? '⭐ ' : '';
   let name = m.displayName || m.name;
-  name = name.replace(/^\[[^\]]+\]\s*/, '');
+  if (!name.startsWith('[Pool]')) name = name.replace(/^\[[^\]]+\]\s*/, '');
   
   if (!health || health.status === 'healthy' || health.status === 'slow') {
     return `${star}🟣 ◆ ${name}`;
@@ -300,7 +222,6 @@ export function injectCustomModelsIntoResponse(
     const rawFields = parseProtoRaw(msgBody, 0, msgBody.length);
     const keptBodyParts: Buffer[] = [];
     let strippedAnyNative = false;
-
     for (const f of rawFields) {
       if (f.tag === modelTag && f.raw) {
         const subFields = parseProtoRaw(f.raw, 0, f.raw.length);
@@ -328,14 +249,16 @@ export function injectCustomModelsIntoResponse(
     let injectedCount = 0;
 
     const filteredModels = (customModels || []).filter(
-      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
+      (m) => !m._poolOnly && m.enabled !== false,
     );
     const expandedModels = expandModelsWithEffort(filteredModels);
     const seenModelKeys = new Set<string>();
 
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
+        ? m.displayName.trim().toLowerCase()
+        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
@@ -492,11 +415,22 @@ function injectCustomModelsIntoUserStatusJson(
     const keptConfigs: any[] = [];
     const strippedLabels = new Set<string>();
     let strippedAnyJson = false;
-
     for (const c of cascade.clientModelConfigs) {
       const label = (c.label || '').trim();
       const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
-      const isObsolete = isObsoleteModel(modelId, label);
+      const labelLower = label.toLowerCase();
+      const idLower = modelId.toLowerCase();
+      if (
+        labelLower.includes('carbon') || idLower.includes('carbon') ||
+        labelLower.includes('argon') || idLower.includes('argon') ||
+        labelLower.includes('hydrogen') || idLower.includes('hydrogen')
+      ) {
+        c.tagTitle = 'Unavailable';
+        c.tagDescription = 'Unavailable';
+        c.disabled = true;
+      }
+      // Native models are preserved intact
+      const isObsolete = false;
       const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
       if (isObsolete || isDisabled) {
         strippedAnyJson = true;
@@ -509,34 +443,6 @@ function injectCustomModelsIntoUserStatusJson(
 
       // Do NOT unlock native Argon models: standard Google accounts have 0 Argon quota.
       // Forcing Argon unlock causes Antigravity to schedule background tasks on Argon, triggering 429 quota exhaustion.
-      const isArgon = label.toLowerCase().includes('argon') || modelId.toLowerCase().includes('argon');
-      if (!isArgon) {
-        const tagTitle = String(c.tagTitle || '');
-        const tagDesc = String(c.tagDescription || '');
-        if (
-          tagTitle.toLowerCase().includes('unavailable') ||
-          tagDesc.toLowerCase().includes('ultra') ||
-          c.disabled === true
-        ) {
-          delete c.disabled;
-          if (tagTitle.toLowerCase().includes('unavailable') || tagDesc.toLowerCase().includes('ultra')) {
-            delete c.tagTitle;
-            delete c.tagDescription;
-          }
-          if (!c.quotaInfo) {
-            c.quotaInfo = {
-              remainingFraction: 1,
-              resetTime: '2099-01-01T00:00:00Z',
-            };
-          }
-          if (Array.isArray(c.allowedTiers)) {
-            if (!c.allowedTiers.includes('g1-ultra-tier')) c.allowedTiers.push('g1-ultra-tier');
-            if (!c.allowedTiers.includes('ultra-tier')) c.allowedTiers.push('ultra-tier');
-            if (!c.allowedTiers.includes('TEAMS_TIER_ULTRA')) c.allowedTiers.push('TEAMS_TIER_ULTRA');
-          }
-        }
-      }
-
       keptConfigs.push(c);
 
       if (label) {
@@ -571,13 +477,18 @@ function injectCustomModelsIntoUserStatusJson(
       );
     }
 
-    const expandedModels = expandModelsWithEffort(customModels);
+    const filteredCascadeCustom = (customModels || []).filter(
+      (m) => !m._poolOnly && m.enabled !== false,
+    );
+    const expandedModels = expandModelsWithEffort(filteredCascadeCustom);
     const seenModelKeys = new Set<string>();
     let injectedCount = 0;
 
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
+        ? m.displayName.trim().toLowerCase()
+        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
@@ -647,6 +558,15 @@ function injectCustomModelsIntoUserStatusJson(
       sortGroup.modelLabels.push(label);
       injectedCount++;
     }
+
+    // Position [Pool] models strictly at the very end of the dropdown
+    const poolConfigs = cascade.clientModelConfigs.filter((c: any) => c.label && c.label.includes('[Pool]'));
+    const nonPoolConfigs = cascade.clientModelConfigs.filter((c: any) => !c.label || !c.label.includes('[Pool]'));
+    cascade.clientModelConfigs = [...nonPoolConfigs, ...poolConfigs];
+
+    const poolLabels = sortGroup.modelLabels.filter((l: string) => l.includes('[Pool]'));
+    const nonPoolLabels = sortGroup.modelLabels.filter((l: string) => !l.includes('[Pool]'));
+    sortGroup.modelLabels = [...nonPoolLabels, ...poolLabels];
 
     if (injectedCount === 0 && !strippedAnyJson) {
       return { buffer: responseBuf, injectedCount: 0, modified: false };
@@ -725,7 +645,7 @@ export function injectCustomModelsIntoUserStatus(
       supportsThought: boolean;
     }> = [];
     const filteredCascadeCustom = (customModels || []).filter(
-      (m) => !isObsoleteModel(m.externalModelName || m.name, m.displayName) && !m._poolOnly,
+      (m) => !m._poolOnly && m.enabled !== false,
     );
     const expandedModels = expandModelsWithEffort(filteredCascadeCustom);
 
@@ -783,7 +703,9 @@ export function injectCustomModelsIntoUserStatus(
     const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
+        ? m.displayName.trim().toLowerCase()
+        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
@@ -838,7 +760,6 @@ export function injectCustomModelsIntoUserStatus(
     const newCascadeParts: Buffer[] = [];
     let strippedAnyCascade = false;
     const strippedLabels = new Set<string>();
-
     // 1. Keep existing client_model_configs (filtering out obsolete or disabled ones)
     for (const f of cascadeFields) {
       if (f.fieldNum === 1 && f.raw) {
@@ -851,7 +772,8 @@ export function injectCustomModelsIntoUserStatus(
             else if (sf.fieldNum === 21) modelId = sf.raw.toString('utf8').trim();
           }
         }
-        const isObsolete = isObsoleteModel(modelId, label);
+        // Native models are preserved intact
+        const isObsolete = false;
         const isDisabled = isModelOrLabelDisabled(modelId, label, disabledModelIds);
         if (isObsolete || isDisabled) {
           strippedAnyCascade = true;

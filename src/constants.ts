@@ -542,7 +542,7 @@ export function isObsoleteModel(idOrName?: string, displayName?: string): boolea
   if (/\bgemini[-_\s]*(?:3(?:\.0)?(?:-pro|-flash|\b)|pro-agent)/i.test(str) && !str.includes('3.8')) return true;
 
   // GPT models (gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5, gpt-oss, etc.)
-  if (/\bgpt[-_\s]*(?:3\.5|4o|4|oss|3)/i.test(str) || str.startsWith('gpt-')) return true;
+  if ((/\bgpt[-_\s]*(?:3\.5|4o|4|3)\b/i.test(str) || str.startsWith('gpt-')) && !str.includes('oss')) return true;
 
   // Old Claude 3.5
   if (/claude[-_\s]*3[-_\s]*5/i.test(str)) return true;

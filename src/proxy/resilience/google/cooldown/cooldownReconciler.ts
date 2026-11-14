@@ -1,4 +1,4 @@
-﻿import log from 'electron-log';
+import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import { getAllLiveAccountQuotas, type AccountLiveQuota } from '../../../../services/auth/googleAuth';
 import { triggerQuotaCachePersist } from '../../../../services/storage/quotaCacheStore';
@@ -56,10 +56,10 @@ function evaluateFamilyRecovery(
     const isFullyRestored = fiveHourPct === 100 && (weekVal === null || weekVal >= 50);
     if (resetPassed && fiveHourPct >= 5) {
       return { shouldWakeUp: true, reason: `${label} reset timestamp elapsed (${resetStr}${weekStr})` };
-    } else if (isFullyRestored) {
+    } else if (quotaIsFresh && isFullyRestored) {
       return { shouldWakeUp: true, reason: `full quota restored (5h=100%${weekStr})` };
-    } else if (fiveHourPct >= 5 && !weeklyDepleted) {
-      return { shouldWakeUp: true, reason: `${quotaIsFresh ? 'fresh live' : 'healthy'} quota (5h=${fiveHourPct}%${weekStr})` };
+    } else if (quotaIsFresh && fiveHourPct >= 5 && !weeklyDepleted) {
+      return { shouldWakeUp: true, reason: `${typeof quota.updatedAt === 'number' ? 'fresh live' : 'healthy'} quota (5h=${fiveHourPct}%${weekStr})` };
     }
   }
   return { shouldWakeUp: false, reason: '' };
@@ -147,7 +147,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         (family ? (quotaExhaustedAccountKeys.has(`${normAcc}:${family}`) || quotaExhaustedAccountKeys.has(`${rawAcc}:${family}`)) : false);
 
       const LIVE_QUOTA_FRESH_MS = 10 * 60_000;
-      const quotaIsFresh = typeof quota.updatedAt === 'number' && (now - quota.updatedAt) <= LIVE_QUOTA_FRESH_MS;
+      const quotaIsFresh = typeof quota.updatedAt === 'number'
+        ? (now - quota.updatedAt) <= LIVE_QUOTA_FRESH_MS
+        : true;
 
       let shouldWakeUp = false;
       let reason = '';

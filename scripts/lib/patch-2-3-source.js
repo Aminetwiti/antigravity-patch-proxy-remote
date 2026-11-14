@@ -90,8 +90,8 @@ function classifyError(status, errorObj, responseBody, provider) {
 function removeSandboxedPreloadLocalImports(source) {
   if (source.includes(SANDBOXED_PRELOAD_MARKER) || !/require\(["']\.\/proxy\//.test(source)) return source;
   let patched = source
-    .replace(/^const idGenerator_1 = require\(["']\.\/proxy\/(?:models\/)?idGenerator["']\);\r?\n/m, '')
-    .replace(/^const errorClassifier_1 = require\(["']\.\/proxy\/(?:resilience\/)?errorClassifier["']\);\r?\n/m, '')
+    .replace(/^const idGenerator_1 = require\(["']\.\/proxy\/(?:models\/(?:catalog\/)?)?idGenerator["']\);\r?\n/m, '')
+    .replace(/^const errorClassifier_1 = require\(["']\.\/proxy\/(?:resilience\/(?:retry\/)?)?errorClassifier["']\);\r?\n/m, '')
     .replace(/\(0, idGenerator_1\.generateModelPlaceholderId\)\(/g, 'generateModelPlaceholderId(')
     .replace(/idGenerator_1\.generateModelPlaceholderId\(/g, 'generateModelPlaceholderId(')
     .replace(/\(0, idGenerator_1\.toSlug\)\(/g, 'toSlug(')

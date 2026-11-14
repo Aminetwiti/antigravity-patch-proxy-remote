@@ -1,4 +1,4 @@
-﻿import type * as http from 'http';
+import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel, GeminiRequestBody } from '../../../core/types';
 import { trimContextPayload } from '../../transforms/contextTrimmer';
@@ -58,6 +58,15 @@ export function optimizePayloadContext(reqJson: Record<string, unknown>): Record
           `[Proxy] ⚡ [Proactive Context Trimmer] Heavy session detected (${turnsCount} turns). Proactively trimmed oldest history to ${remainingTurns} turns before first network dispatch.`,
         );
       }
+    }
+  }
+
+  // Detect and mitigate repetitive tool execution loops once per request before candidate rotation
+  const targetContents = (reqJson.request as any)?.contents || (reqJson as any).contents;
+  if (Array.isArray(targetContents)) {
+    const loopMitigated = detectAndMitigateToolLoops(targetContents);
+    if (loopMitigated) {
+      log.warn(`[Proxy] 🛡️ [Anti-Loop Guardrail] Repetitive tool calls detected in conversation. Injected anti-loop advisory.`);
     }
   }
 
@@ -170,15 +179,6 @@ export function prepareCandidatePayload(
       process.env.AG_ENABLE_ANTI_TRUNCATION === '1';
     if (wantsAntiTrunc) {
       applyAntiTruncation(reqObj);
-    }
-
-    const targetContents = reqObj.contents || reqJson.contents;
-    if (Array.isArray(targetContents)) {
-      const loopMitigated = detectAndMitigateToolLoops(targetContents);
-      if (loopMitigated) {
-        const candidateName = candidate.accountEmail || candidate.name || 'candidate';
-        log.warn(`[Proxy] 🛡️ [Anti-Loop Guardrail] Repetitive tool calls detected in conversation. Injected anti-loop advisory for ${candidateName}`);
-      }
     }
   }
 

@@ -679,9 +679,9 @@ try {
     // Atomic replace with Windows retry fallback
     try {
       if (fs.existsSync(asarOut)) {
-        try { fs.unlinkSync(asarOut); } catch (_) {}
+        // Do not unlink to avoid breaking open file handles on Windows
       }
-      fs.renameSync(tempAsarOut, asarOut);
+      fs.copyFileSync(tempAsarOut, asarOut); try { fs.unlinkSync(tempAsarOut); } catch (_) {}
     } catch (renameErr) {
       // Fallback copy if rename across volumes/locks is restricted
       fs.copyFileSync(tempAsarOut, asarOut);

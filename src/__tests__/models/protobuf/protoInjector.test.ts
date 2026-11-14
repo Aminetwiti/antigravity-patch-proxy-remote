@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   injectCustomModelsIntoResponse,
   injectCustomModelsIntoUserStatus,
@@ -483,7 +483,7 @@ describe('injectCustomModelsIntoUserStatus', () => {
     expect(modelIds).not.toContain('claude-3-5-sonnet');
   });
 
-  it('suppresses native Claude and Flash entries when covered by pooled custom models while preserving Argon', () => {
+  it('preserves native Claude and Flash entries when covered by pooled custom models while preserving Argon', () => {
     const rawJson = JSON.stringify({
       userStatus: {
         cascadeModelConfigData: {
@@ -517,37 +517,189 @@ describe('injectCustomModelsIntoUserStatus', () => {
       {
         name: 'claude-sonnet-4-6',
         displayName: 'Claude Sonnet 4.6 (Thinking)',
-        provider: 'google' as const,
+        provider: 'google',
         apiKey: 'auto',
         externalModelName: 'claude-sonnet-4-6',
         apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        _poolOnly: true,
       },
       {
         name: 'gemini-3.8-flash-tiered',
         displayName: 'Gemini 3.8 Flash',
-        provider: 'google' as const,
+        provider: 'google',
         apiKey: 'auto',
         externalModelName: 'gemini-3.8-flash-tiered',
         apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        _poolOnly: true,
+      },
+      {
+        name: 'custom-model-test',
+        displayName: 'Custom Extra Model',
+        provider: 'openai',
+        apiKey: 'sk-1234',
+        enabled: true,
       },
     ];
 
-    const result = injectCustomModelsIntoUserStatus(framedBuf, pooledCustomModels);
+    let result;
+    result = injectCustomModelsIntoUserStatus(framedBuf, pooledCustomModels as any);
 
     expect(result.modified).toBe(true);
     const bodyLen = result.buffer.readUInt32BE(1);
     const parsed = JSON.parse(result.buffer.subarray(5, 5 + bodyLen).toString('utf8'));
     const configs = parsed.userStatus.cascadeModelConfigData.clientModelConfigs;
 
-    // Native Claude Sonnet and Gemini Flash should be suppressed, but Gemini 4 Argon must be preserved!
     const labels = configs.map((c: any) => c.label);
     expect(labels).toContain('Gemini 4 Argon');
-    expect(labels).not.toContain('Claude Sonnet 4.6 (Thinking)');
-    expect(labels).not.toContain('Gemini 3.8 Flash');
+    expect(labels).toContain('Claude Sonnet 4.6 (Thinking)');
+    expect(labels).toContain('Gemini 3.8 Flash');
 
-    // And pooled models should be present with purple icon
-    expect(labels.some((l: string) => l.includes('🟣 ◆ Claude Sonnet 4.6 (Thinking) (Medium)'))).toBe(true);
-    expect(labels.some((l: string) => l.includes('🟣 ◆ Gemini 3.8 Flash (Medium)'))).toBe(true);
+    expect(labels.some((l: string) => l.includes('🟣 ◆ Claude Sonnet'))).toBe(false);
+    expect(labels.some((l: string) => l.includes('Custom Extra Model'))).toBe(true);
+  });
+
+  it('strictly preserves Gemini 4 Carbon, Argon, Hydrogen as Unavailable and GPT-OSS 120B Notice', () => {
+    const rawJson = JSON.stringify({
+      userStatus: {
+        cascadeModelConfigData: {
+          clientModelConfigs: [
+            { label: 'Gemini 3.8 Flash', modelId: 'gemini-3.8-flash-tiered' },
+            { label: 'Claude Sonnet 4.6 (Thinking)', modelId: 'claude-sonnet-4-6', tagTitle: 'Notice' },
+            { label: 'Claude Opus 4.6 (Thinking)', modelId: 'claude-opus-4-6-thinking', tagTitle: 'Notice' },
+            { label: 'GPT-OSS 120B (Medium)', modelId: 'gpt-oss-120b', tagTitle: 'Notice' },
+            { label: 'Gemini 4 Carbon', modelId: 'gemini-4-carbon', tagTitle: 'Unavailable', disabled: true },
+            { label: 'Gemini 4 Argon', modelId: 'gemini-4-argon', tagTitle: 'Unavailable', disabled: true },
+            { label: 'Gemini 4 Hydrogen', modelId: 'gemini-4-hydrogen', tagTitle: 'Unavailable', disabled: true },
+          ],
+          clientModelSorts: [
+            {
+              name: 'Recommended',
+              groups: [
+                {
+                  modelLabels: [
+                    'Gemini 3.8 Flash',
+                    'Claude Sonnet 4.6 (Thinking)',
+                    'Claude Opus 4.6 (Thinking)',
+                    'GPT-OSS 120B (Medium)',
+                    'Gemini 4 Carbon',
+                    'Gemini 4 Argon',
+                    'Gemini 4 Hydrogen',
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const framedBuf = buildGrpcWebFrame(0, Buffer.from(rawJson, 'utf8'));
+    const customModels = [
+      {
+        name: 'custom-model',
+        displayName: 'Custom GPT-4o',
+        provider: 'openai',
+        apiKey: 'sk-test',
+        enabled: true,
+      },
+    ];
+
+    const result = injectCustomModelsIntoUserStatus(framedBuf, customModels as any);
+    expect(result.modified).toBe(true);
+    const bodyLen = result.buffer.readUInt32BE(1);
+    const parsed = JSON.parse(result.buffer.subarray(5, 5 + bodyLen).toString('utf8'));
+    const configs = parsed.userStatus.cascadeModelConfigData.clientModelConfigs;
+
+    const carbon = configs.find((c: any) => c.label === 'Gemini 4 Carbon');
+    const argon = configs.find((c: any) => c.label === 'Gemini 4 Argon');
+    const hydrogen = configs.find((c: any) => c.label === 'Gemini 4 Hydrogen');
+    const gptOss = configs.find((c: any) => c.label === 'GPT-OSS 120B (Medium)');
+
+    expect(carbon).toBeDefined();
+    expect(carbon.tagTitle).toBe('Unavailable');
+    expect(carbon.disabled).toBe(true);
+
+    expect(argon).toBeDefined();
+    expect(argon.tagTitle).toBe('Unavailable');
+    expect(argon.disabled).toBe(true);
+
+    expect(hydrogen).toBeDefined();
+    expect(hydrogen.tagTitle).toBe('Unavailable');
+    expect(hydrogen.disabled).toBe(true);
+
+    expect(gptOss).toBeDefined();
+    expect(gptOss.tagTitle).toBe('Notice');
+  });
+
+  it('strictly preserves Carbon/Argon/Hydrogen as Unavailable and appends [Pool] Gemini 3.8 Flash at the end', () => {
+    const rawJson = JSON.stringify({
+      userStatus: {
+        cascadeModelConfigData: {
+          clientModelConfigs: [
+            { label: 'Gemini 3.8 Flash', modelId: 'gemini-3.8-flash-tiered' },
+            { label: 'Claude Sonnet 4.6 (Thinking)', modelId: 'claude-sonnet-4-6', tagTitle: 'Notice' },
+            { label: 'Claude Opus 4.6 (Thinking)', modelId: 'claude-opus-4-6-thinking' },
+            { label: 'GPT-OSS 120B (Medium)', modelId: 'gpt-oss-120b', tagTitle: 'Notice' },
+            { label: 'Gemini 4 Carbon', modelId: 'gemini-4-carbon' },
+            { label: 'Gemini 4 Argon', modelId: 'gemini-4-argon' },
+            { label: 'Gemini 4 Hydrogen', modelId: 'gemini-4-hydrogen' },
+          ],
+          clientModelSorts: [
+            {
+              name: 'Recommended',
+              groups: [
+                {
+                  modelLabels: [
+                    'Gemini 3.8 Flash',
+                    'Claude Sonnet 4.6 (Thinking)',
+                    'Claude Opus 4.6 (Thinking)',
+                    'GPT-OSS 120B (Medium)',
+                    'Gemini 4 Carbon',
+                    'Gemini 4 Argon',
+                    'Gemini 4 Hydrogen',
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const framedBuf = buildGrpcWebFrame(0, Buffer.from(rawJson, 'utf8'));
+    const customModels = [
+      {
+        name: 'models/google:gemini-3.8-flash-tiered:auto-pool',
+        displayName: '[Pool] Gemini 3.8 Flash',
+        provider: 'google',
+        apiKey: 'auto',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+      },
+    ];
+
+    const result = injectCustomModelsIntoUserStatus(framedBuf, customModels as any);
+    expect(result.modified).toBe(true);
+    const bodyLen = result.buffer.readUInt32BE(1);
+    const parsed = JSON.parse(result.buffer.subarray(5, 5 + bodyLen).toString('utf8'));
+    const configs = parsed.userStatus.cascadeModelConfigData.clientModelConfigs;
+    const sorts = parsed.userStatus.cascadeModelConfigData.clientModelSorts[0].groups[0].modelLabels;
+
+    const carbon = configs.find((c: any) => c.label === 'Gemini 4 Carbon');
+    const argon = configs.find((c: any) => c.label === 'Gemini 4 Argon');
+    const hydrogen = configs.find((c: any) => c.label === 'Gemini 4 Hydrogen');
+    const sonnet = configs.find((c: any) => c.label === 'Claude Sonnet 4.6 (Thinking)');
+
+    expect(carbon.tagTitle).toBe('Unavailable');
+    expect(carbon.disabled).toBe(true);
+    expect(argon.tagTitle).toBe('Unavailable');
+    expect(argon.disabled).toBe(true);
+    expect(hydrogen.tagTitle).toBe('Unavailable');
+    expect(hydrogen.disabled).toBe(true);
+    expect(sonnet.tagTitle).toBe('Notice');
+
+    // [Pool] Gemini 3.8 Flash should be present and at the end of sorts
+    expect(sorts.some((s: string) => s.includes('🟣 ◆ [Pool] Gemini 3.8 Flash'))).toBe(true);
+    expect(sorts[sorts.length - 1]).toContain('🟣 ◆ [Pool] Gemini 3.8 Flash');
   });
 });
-

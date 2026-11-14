@@ -2,6 +2,19 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.9.0] - 2026-11-14 (CI/CD Streamlining, Security Purge & Model Injector Resilience)
+
+### Added
+- **Unified CI Pipeline**: Integrated automated build, lint and full Vitest test suites for ag-doctor CLI (169 tests) and ag-doctor-ui Electron interface (1,559 tests) into GitHub Actions.
+- **Artifact Packaging**: Automated release artifact packaging and validation on GitHub CI.
+
+### Changed
+- **CI/CD Cleanup**: Removed orphaned Flutter mobile and Go daemon workflows from repository pipelines.
+- **Model Injector Hardening**: Enhanced model category normalization, pool-duplicate model stripping and protobuf cascade prevention in protoInjector.ts.
+- **Security & Secret Sanitization**: Complete deep sanitization of Git history, updated .gitleaks.toml rules and hardened credential policies.
+- **Version Bump**: Bumped core proxy, ag-doctor CLI, and ag-doctor-ui to v3.9.0.
+
+---
 ## [3.8.2] - 2026-10-31 (Public Sanitization, Security Hardening & Zero-Leak Release)
 
 ### Added

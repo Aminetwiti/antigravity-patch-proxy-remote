@@ -137,8 +137,8 @@ describe('buildPatchManifest', () => {
   it('includes the complete compiled proxy tree and critical modules', () => {
     const manifest = buildPatchManifest(path.resolve(__dirname, '../..'));
     expect(manifest).toContain('dist/proxy.js');
-    expect(manifest).toContain('dist/proxy/idGenerator.js');
-    expect(manifest).toContain('dist/proxy/errorClassifier.js');
+    expect(manifest).toContain('dist/proxy/models/catalog/idGenerator.js');
+    expect(manifest).toContain('dist/proxy/resilience/retry/errorClassifier.js');
     expect(manifest).toContain('dist/proxy/translators/openai.js');
     expect(manifest).toContain('dist/proxy/translators/anthropic.js');
     expect(manifest.some((entry: string) => entry.endsWith('.js.map'))).toBe(false);

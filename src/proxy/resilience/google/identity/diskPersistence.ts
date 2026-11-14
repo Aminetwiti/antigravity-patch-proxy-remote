@@ -1,4 +1,4 @@
-﻿import fs from 'fs';
+import fs from 'fs';
 import log from 'electron-log';
 import { getCustomModelsPath } from '../../../models/catalog/modelLoader';
 import { withWriteLock, invalidateModelStoreCache, atomicWriteJson } from '../../../../services/storage/modelStore';
@@ -18,7 +18,7 @@ export function persistAccountChallengeToDisk(accountEmail: string, errorMsg: st
     try {
       const filePath = getCustomModelsPath();
       if (!fs.existsSync(filePath)) return;
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await fs.promises.readFile(filePath, 'utf-8');
       const parsed = JSON.parse(content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content);
       let mutated = false;
       const cleanTarget = accountEmail.trim().toLowerCase();
@@ -82,7 +82,7 @@ export function persistAccountQuotaExhaustedToDisk(accountEmail: string, resetIs
     try {
       const filePath = getCustomModelsPath();
       if (!fs.existsSync(filePath)) return;
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await fs.promises.readFile(filePath, 'utf-8');
       const parsed = JSON.parse(content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content);
       let mutated = false;
       const cleanTarget = accountEmail.trim().toLowerCase();
@@ -140,7 +140,7 @@ export function clearAccountQuotaExhaustedFromDisk(accountEmail?: string): void 
     try {
       const filePath = getCustomModelsPath();
       if (!fs.existsSync(filePath)) return;
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await fs.promises.readFile(filePath, 'utf-8');
       const parsed = JSON.parse(content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content);
       let mutated = false;
       const cleanTarget = accountEmail.replace(/^google:/, '').trim().toLowerCase();
@@ -202,7 +202,7 @@ export function clearAllAccountQuotaExhaustedFromDisk(): void {
     try {
       const filePath = getCustomModelsPath();
       if (!fs.existsSync(filePath)) return;
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await fs.promises.readFile(filePath, 'utf-8');
       const parsed = JSON.parse(content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content);
       let mutated = false;
       if (parsed.providers && Array.isArray(parsed.providers)) {

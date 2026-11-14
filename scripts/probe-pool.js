@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * scripts/probe-pool.js
- * 
+ *
  * High-speed parallel health-checker, 403/TOS diagnostic and sanitizer for Google Cloud Code accounts.
  * Probes all accounts with real Antigravity IDE signatures, isolates black-hole/captcha
  * accounts, classifies failure types, and keeps custom_models.json in a 100% healthy state.
- * 
+ *
  * Usage:
  *   node scripts/probe-pool.js [--dry-run] [--json]
  */

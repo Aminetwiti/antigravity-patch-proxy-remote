@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Custom model loading and management.
  * Handles reading custom_models.json, encryption migration, and validation.
  */
@@ -467,9 +467,10 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
     seenBaseIds.forEach((template, baseId) => {
       let displayName = template.displayName || baseId;
       displayName = displayName.replace(/^\[[^\]]+\]\s*/, '');
-      if (baseId === 'gemini-3.8-flash-tiered' && (displayName === baseId || displayName.includes('-tiered'))) displayName = 'Gemini 3.8 Flash';
-      if (baseId === 'claude-sonnet-4-6' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Sonnet 4.6 (Thinking)';
-      if (baseId === 'claude-opus-4-6-thinking' && (displayName === baseId || displayName.includes('-4-6'))) displayName = 'Claude Opus 4.6 (Thinking)';
+      if (baseId === 'gemini-3.8-flash-tiered') displayName = '[Pool] Gemini 3.8 Flash';
+      else if (baseId === 'claude-sonnet-4-6') displayName = '[Pool] Claude Sonnet 4.6 (Thinking)';
+      else if (baseId === 'claude-opus-4-6-thinking') displayName = '[Pool] Claude Opus 4.6 (Thinking)';
+      else if (!displayName.includes('[Pool]')) displayName = '[Pool] ' + displayName;
 
       pooledGoogleModels.push({
         ...template,
@@ -482,6 +483,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
         refreshToken: undefined,
         accountName: '',
         accountEmail: '',
+        _poolOnly: (baseId !== 'gemini-3.8-flash-tiered') ? (true as const) : undefined,
         _effortSuffix: template._effortSuffix || '',
       });
     });
