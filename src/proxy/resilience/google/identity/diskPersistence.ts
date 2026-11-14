@@ -76,7 +76,7 @@ export function persistAccountChallengeToDisk(accountEmail: string, errorMsg: st
  * Persists quota exhausted state (429) to custom_models.json
  * so Doctor UI immediately reflects the account status.
  */
-export function persistAccountQuotaExhaustedToDisk(accountEmail: string, resetIso: string): void {
+export function persistAccountQuotaExhaustedToDisk(accountEmail: string, resetIso: string, modelFamily = 'gemini'): void {
   if (!accountEmail) return;
   withWriteLock(async () => {
     try {
@@ -93,14 +93,23 @@ export function persistAccountQuotaExhaustedToDisk(accountEmail: string, resetIs
               const email = (a.email || '').trim().toLowerCase();
               if (email === cleanTarget) {
                 if (a.status !== 'validation_required' && !a.isValidationRequired) {
-                  const hasClaudeQuota = typeof a.quotas?.claudeFiveHourPct === 'number' && a.quotas.claudeFiveHourPct > 0;
-                  if (!hasClaudeQuota) {
-                    a.status = 'exhausted';
-                  }
                   if (!a.quotas) a.quotas = {};
-                  a.quotas.geminiFiveHourPct = 0;
-                  a.quotas.fiveHourPercentage = 0;
-                  a.quotas.geminiFiveHourReset = resetIso;
+                  if (modelFamily === 'claude') {
+                    a.quotas.claudeFiveHourPct = 0;
+                    a.quotas.claudeFiveHourReset = resetIso;
+                    const hasGeminiQuota = typeof a.quotas?.geminiFiveHourPct === 'number' && a.quotas.geminiFiveHourPct > 0;
+                    if (!hasGeminiQuota) {
+                      a.status = 'exhausted';
+                    }
+                  } else {
+                    a.quotas.geminiFiveHourPct = 0;
+                    a.quotas.fiveHourPercentage = 0;
+                    a.quotas.geminiFiveHourReset = resetIso;
+                    const hasClaudeQuota = typeof a.quotas?.claudeFiveHourPct === 'number' && a.quotas.claudeFiveHourPct > 0;
+                    if (!hasClaudeQuota) {
+                      a.status = 'exhausted';
+                    }
+                  }
                   mutated = true;
                 }
               }

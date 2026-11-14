@@ -40,7 +40,7 @@ export async function attemptFallbackCascade(params: FallbackParams): Promise<bo
   }
   if (!canAttemptFallback) return false;
 
-  if (allowCrossModelFallback && attemptedModels.size <= 1) {
+  if (allowCrossModelFallback && fallbackDepth === 0) {
     const crossSuccess = await attemptCrossModelFallback(params, allCustomModels, currentBase, isClaudeRequest);
     if (crossSuccess) return true;
   }

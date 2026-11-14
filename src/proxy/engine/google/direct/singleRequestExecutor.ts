@@ -51,7 +51,6 @@ export function executeGoogleCloudCodeRequest(
     const finish = (outcome: GoogleRequestOutcome) => {
       if (settled) return;
       settled = true;
-      log.info(`[SingleExec] Request finished for ${modelName}: status=${outcome.statusCode}, success=${outcome.success}, error=${outcome.error || 'none'}`);
       try {
         if (typeof res?.off === 'function') res.off('close', onClientClose);
       } catch (_) {}
@@ -104,6 +103,8 @@ export function executeGoogleCloudCodeRequest(
         servername: targetHost,
         agent: getHttpsAgent({ host: targetHost }),
       };
+
+      log.info(`[SingleExec Dispatch] URL=${parsedUrl.toString()} servername=${targetHost} auth=${String(headers['authorization']).slice(0, 20)}... bodyLen=${reqBody.length}`);
 
       proxyReq = https.request(parsedUrl, options, (proxyRes) => {
         if (responseClaimer) {

@@ -146,7 +146,7 @@ export async function processOutcome429(
     updateLiveAccountQuota(liveKey, updatedQ as AccountLiveQuota);
 
     if (targetEmail && (isWeekly || cooldownDuration >= 3600_000)) {
-      persistAccountQuotaExhaustedToDisk(targetEmail, resetIso);
+      persistAccountQuotaExhaustedToDisk(targetEmail, resetIso, modelFamily);
     }
 
     const remainingHealthyWithQuota = sortedAccounts.slice(candidateIndex + 1).some(

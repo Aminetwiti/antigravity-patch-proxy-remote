@@ -140,10 +140,7 @@ export function classifyGoogleCloudCode429(
     'quota reached',
     'enable overages',
     'individual quota',
-    'resource_exhausted',
-    'resource has been exhausted',
-    'quota exceeded',
-    'google_one_ai',
+    'upgrade your subscription',
     'insufficient credit',
     'insufficient credits',
     'not enough credit',
@@ -155,28 +152,30 @@ export function classifyGoogleCloudCode429(
     'minimum credit amount for usage',
     'minimum credit',
     'insufficient_g1_credits_balance',
-    'g1_credits',
     'daily limit',
-    'exhausted your capacity',
     'free tier',
   ];
 
-  for (const kw of QUOTA_EXHAUSTED_KEYWORDS) {
-    if (msg.includes(kw)) {
-      const quotaCooldownMs = retryAfterMs && retryAfterMs > 0 && retryAfterMs <= FIVE_H_15_MS
-        ? Math.max(retryAfterMs, 5 * 60 * 60 * 1000)
-        : 5 * 60 * 60 * 1000;
-      return {
-        category: 'quota_exhausted',
-        cooldownMs: quotaCooldownMs,
-        reason: weeklyResetMs !== null
-          ? `Quota exhausted (weekly reset in ${Math.round(weeklyResetMs / 3_600_000)}h) — 5h cooldown and switch account`
-          : `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
-        isExplicitReset: retryAfterMs !== null,
-        rawRetryAfterMs: retryAfterMs,
-        weeklyResetMs,
-      };
-    }
+  const hasExplicitMultiHourReset =
+    weeklyResetMs !== null ||
+    (retryAfterMs !== null && retryAfterMs >= 15 * 60_000);
+
+  const hasQuotaExhaustedKeyword = QUOTA_EXHAUSTED_KEYWORDS.some((kw) => msg.includes(kw));
+
+  if (hasQuotaExhaustedKeyword || hasExplicitMultiHourReset) {
+    const quotaCooldownMs = retryAfterMs && retryAfterMs > 0 && retryAfterMs <= FIVE_H_15_MS
+      ? Math.max(retryAfterMs, 5 * 60 * 60 * 1000)
+      : 5 * 60 * 60 * 1000;
+    return {
+      category: 'quota_exhausted',
+      cooldownMs: quotaCooldownMs,
+      reason: weeklyResetMs !== null
+        ? `Quota exhausted (weekly reset in ${Math.round(weeklyResetMs / 3_600_000)}h) — 5h cooldown and switch account`
+        : `Quota exhausted — ${Math.round(quotaCooldownMs / 3_600_000)}h cooldown and switch account`,
+      isExplicitReset: retryAfterMs !== null,
+      rawRetryAfterMs: retryAfterMs,
+      weeklyResetMs,
+    };
   }
 
   // 4. Soft / burst rate limit
@@ -199,12 +198,16 @@ export function classifyGoogleCloudCode429(
   if (
     msg.includes('rate limit') ||
     msg.includes('rate_limit') ||
-    msg.includes('too many requests')
+    msg.includes('too many requests') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('resource has been exhausted') ||
+    msg.includes('quota exceeded') ||
+    msg.includes('exhausted your capacity')
   ) {
     return {
       category: 'rate_limited',
-      cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 60_000,
-      reason: 'Rate limit — 60s cooldown',
+      cooldownMs: retryAfterMs && retryAfterMs > 0 ? retryAfterMs : 30_000,
+      reason: 'Rate limit — 30s cooldown',
       isExplicitReset: retryAfterMs !== null,
       rawRetryAfterMs: retryAfterMs,
     };

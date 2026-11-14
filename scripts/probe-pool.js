@@ -22,7 +22,10 @@ const https = require('https');
 
 try { const l = require('electron-log'); if (l?.transports?.file) l.transports.file.setAppName('antigravity-patch-proxy'); } catch(e){}
 const repoRoot = path.resolve(__dirname, '..');
-const { getValidGoogleAccessToken } = require(path.join(repoRoot, 'dist', 'services', 'googleAuth.js'));
+const googleAuthPath = fs.existsSync(path.join(repoRoot, 'dist', 'services', 'auth', 'googleAuth.js'))
+  ? path.join(repoRoot, 'dist', 'services', 'auth', 'googleAuth.js')
+  : path.join(repoRoot, 'dist', 'services', 'googleAuth.js');
+const { getValidGoogleAccessToken } = require(googleAuthPath);
 
 const customModelsPath = path.join(os.homedir(), '.gemini', 'antigravity', 'custom_models.json');
 const quotaCachePath = path.join(os.homedir(), '.gemini', 'antigravity', 'quota_cache.json');

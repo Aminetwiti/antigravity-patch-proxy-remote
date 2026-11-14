@@ -14,7 +14,7 @@ function loadEnv(filePath) {
         if (eqIdx > 0) {
           const k = trimmed.slice(0, eqIdx).trim();
           const v = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
-          if (!process.env[k]) process.env[k] = v;
+          process.env[k] = v;
         }
       }
     }
@@ -22,6 +22,8 @@ function loadEnv(filePath) {
 }
 loadEnv(path.join(__dirname, '..', '..', '..', '.env'));
 loadEnv(path.join(os.homedir(), '.gemini', 'antigravity', '.env'));
+// For consumer accounts (aicode-consumers / @gmail.com), force daily-cloudcode-pa to avoid 429 quota rejection
+process.env.AG_GOOGLE_CLOUDCODE_HOST = 'daily-cloudcode-pa.googleapis.com';
 
 // Prefer the freshly built proxy in this repo's dist/ — the copy bundled
 // inside a (possibly stale/legacy) app.asar is only a fallback.
