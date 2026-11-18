@@ -32,6 +32,9 @@ export { normalizeGoogleModelId };
  */
 export function toAiStudioModelId(modelName: string): string {
   const norm = normalizeGoogleModelId(modelName);
+  if (norm === 'gemini-4-hydrogen-sonar' || norm.includes('hydrogen')) {
+    return 'gemini-4-hydrogen';
+  }
   return norm.replace(/-tiered$/, '').replace(/-(low|medium|high)$/i, '');
 }
 

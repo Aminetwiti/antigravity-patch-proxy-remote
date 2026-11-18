@@ -93,6 +93,25 @@ describe('SOLID Architecture — Google Accounts Pure Analyzer (SRP)', () => {
       expect(eff.claudeWkPct).toBe(60);
     });
 
+    it('aligns gemini weekly with real 5h quota when weekly is omitted or defaults to 100 while 5h is lower', () => {
+      const acc = {
+        quotas: {
+          geminiFiveHourPct: 52,
+          geminiFiveHourReset: '2026-11-18T16:40:00Z',
+          claudeFiveHourPct: 0,
+          claudeWeeklyPct: 77,
+          claudeWeeklyReset: '2026-11-20T13:00:00Z',
+        },
+      };
+      const eff = getAccountEffectiveQuotas(acc);
+      expect(eff.gemini5hPct).toBe(52);
+      expect(eff.geminiWkPct).toBe(52);
+      expect(eff.geminiWkReset).toBe('2026-11-18T16:40:00Z');
+      expect(eff.claude5hPct).toBe(0);
+      expect(eff.claudeWkPct).toBe(77);
+      expect(eff.claudeWkReset).toBe('2026-11-20T13:00:00Z');
+    });
+
     it('estimates tokens according to account tier', () => {
       const proAcc = {
         tier: 'PRO',

@@ -95,11 +95,11 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
     isFlashModel
       ? hasOtherCandidates && healthySiblingAccountsCount >= 1
         ? isThinkingModel
-          ? Math.max(55_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)
+          ? Math.min(60_000, Math.max(50_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS))
           : 45_000
         : isThinkingModel
         ? updatedBody.length > 100_000
-          ? 80_000
+          ? 70_000
           : 65_000
         : 55_000
       : (hasOtherCandidates && healthySiblingAccountsCount >= 1

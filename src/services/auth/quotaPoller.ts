@@ -598,7 +598,8 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                   }
 
                   const effGemini5h = geminiFiveHourPct ?? 100;
-                  const effGeminiWk = geminiWeeklyPct ?? 100;
+                  const effGeminiWk = geminiWeeklyPct ?? effGemini5h;
+                  const effGeminiWkReset = geminiWeeklyReset || geminiFiveHourReset;
 
                   const result: AccountLiveQuota = {
                     fiveHourPercentage: effGemini5h,
@@ -612,7 +613,7 @@ export function fetchLiveUserQuota(accessToken: string): Promise<AccountLiveQuot
                     updatedAt: Date.now(),
                     geminiResetTime: geminiFiveHourReset,
                     geminiFiveHourReset,
-                    geminiWeeklyReset,
+                    geminiWeeklyReset: effGeminiWkReset,
                     claudeResetTime: claudeFiveHourReset,
                     claudeFiveHourReset,
                     claudeWeeklyReset,

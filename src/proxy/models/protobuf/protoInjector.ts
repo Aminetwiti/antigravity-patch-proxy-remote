@@ -34,7 +34,7 @@ export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabl
   const rawLabel = (labelStr || '').trim().toLowerCase();
   const cleanLabel = (labelStr || '')
     .replace(/^⭐\s*/, '')
-    .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+    .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
     .replace(/\s*\([^)]*\)\s*$/, '')
     .trim()
     .toLowerCase();
@@ -163,7 +163,7 @@ function extractExistingModelKeys(msgBody: Buffer, modelTag: number): {
         ) {
           const norm = labelStr
             .replace(/^⭐\s*/, '')
-            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
             .trim()
             .toLowerCase();
           if (norm) placeholderNames.add(norm);
@@ -256,9 +256,7 @@ export function injectCustomModelsIntoResponse(
 
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
-        ? m.displayName.trim().toLowerCase()
-        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
@@ -429,7 +427,7 @@ function injectCustomModelsIntoUserStatusJson(
         !isCustomInjected &&
         (labelLower.includes('carbon') || idLower.includes('carbon') ||
          labelLower.includes('argon') || idLower.includes('argon') ||
-         labelLower.includes('hydrogen') || idLower.includes('hydrogen'))
+         ((labelLower.includes('hydrogen') || idLower.includes('hydrogen')) && !labelLower.includes('sonar') && !idLower.includes('sonar')))
       ) {
         c.tagTitle = 'Unavailable';
         c.tagDescription = 'Unavailable';
@@ -463,7 +461,7 @@ function injectCustomModelsIntoUserStatusJson(
         ) {
           const norm = label
             .replace(/^⭐\s*/, '')
-            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
             .trim()
             .toLowerCase();
           if (norm) existingPlaceholderNames.add(norm);
@@ -492,9 +490,7 @@ function injectCustomModelsIntoUserStatusJson(
 
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
-        ? m.displayName.trim().toLowerCase()
-        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
@@ -695,7 +691,7 @@ export function injectCustomModelsIntoUserStatus(
           ) {
             const norm = label
               .replace(/^⭐\s*/, '')
-              .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+              .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
               .trim()
               .toLowerCase();
             if (norm) existingPlaceholderNames.add(norm);
@@ -712,9 +708,7 @@ export function injectCustomModelsIntoUserStatus(
     const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
-        ? m.displayName.trim().toLowerCase()
-        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 

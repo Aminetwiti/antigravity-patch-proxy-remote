@@ -262,7 +262,14 @@ export async function processOutcome429(
     const hasAvailableSibling = sortedAccounts.slice(candidateIndex + 1).some(
       (c) => !isAccountInCooldown(c, modelFamily) && (c as any).enabled !== false,
     );
-    if (!hasAvailableSibling) {
+    if (hasAvailableSibling) {
+      // Micro-pacing anti-burst: 150-250ms delay with jitter to prevent slamming Google's IP token bucket
+      const burstJitterMs = 150 + Math.floor(Math.random() * 100);
+      if (!res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
+        await interruptibleDelay(res, burstJitterMs);
+        if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
+      }
+    } else {
       const pacingMs = state.consecutive429Count > 1 ? 2000 + Math.floor(Math.random() * 800) : 1000 + Math.floor(Math.random() * 400);
       log.info(`[Proxy] ⏳ [IP Bucket Drain] Pause préventive de ${pacingMs}ms pour vider le seau IP Google.`);
       if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };

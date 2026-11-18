@@ -343,6 +343,12 @@ export async function handleCloudCodeGenerationRoute(
           }
 
           handleCustomModelRequest(res, matchedCustomModel, actualGeminiBody, isStream);
+        }).catch((err) => {
+          log.error('[Proxy] Failed to resolve file data or process custom model request:', err);
+          if (!res.headersSent && !res.writableEnded) {
+            safeWriteHead(res, 502, { 'Content-Type': 'application/json' });
+            safeEnd(res, JSON.stringify({ error: { message: `Request processing failed: ${(err as Error)?.message || err}` } }));
+          }
         });
         return { handled: true, convId, sessId };
       }

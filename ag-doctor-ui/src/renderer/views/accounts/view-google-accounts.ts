@@ -586,7 +586,7 @@ function getAccountEffectiveQuotas(acc: any): {
     : (foundGemini5hReset || q.geminiFiveHourReset || (is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : (is5hWindowReset(q.fiveHourResetTime) ? q.fiveHourResetTime : undefined)));
   const rawGeminiWkReset = (cdGemini?.isWeeklyCap && cdGemini?.until && cdGemini.until > Date.now())
     ? new Date(cdGemini.until).toISOString()
-    : (foundGeminiWkReset || q.geminiWeeklyReset || q.weeklyResetTime || (!is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : undefined));
+    : (foundGeminiWkReset || (q.geminiWeeklyReset && q.geminiWeeklyReset !== rawGemini5hReset ? q.geminiWeeklyReset : undefined) || q.weeklyResetTime || (!is5hWindowReset(q.geminiResetTime) ? q.geminiResetTime : undefined) || rawGemini5hReset);
   const rawClaude5hReset = (cdClaude?.until && cdClaude.until > Date.now())
     ? new Date(cdClaude.until).toISOString()
     : (foundClaude5hReset || q.claudeFiveHourReset || (is5hWindowReset(q.claudeResetTime) ? q.claudeResetTime : undefined));

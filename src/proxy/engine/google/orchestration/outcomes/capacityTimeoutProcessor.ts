@@ -38,9 +38,15 @@ export async function processOutcomeCapacityOrTimeout(
 
   if (isCapacityExhausted) {
     state.consecutive503CapacityCount++;
-    const capacityThreshold = Math.min(CAPACITY_503_CASCADE_THRESHOLD, Math.max(2, Math.ceil(sortedAccounts.length * 0.5)));
+    const dynamicCapacityCap = process.env.AG_CAPACITY_503_MAX_CAP
+      ? parseInt(process.env.AG_CAPACITY_503_MAX_CAP, 10)
+      : 7;
+    const capacityThreshold = Math.min(
+      CAPACITY_503_CASCADE_THRESHOLD,
+      Math.max(2, Math.min(dynamicCapacityCap, Math.ceil(sortedAccounts.length * 0.4))),
+    );
     log.warn(
-      `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Placing in 45s cooldown.`,
+      `[Proxy] ⚠️ Account [${candidateName}] hit MODEL_CAPACITY_EXHAUSTED / 503 Overload for [${targetModel}]. Placing in 45s cooldown. (Capacity 503 count: ${state.consecutive503CapacityCount}/${capacityThreshold})`,
     );
     setAccountCooldown(candidate, 45_000, modelFamily, true);
     recordAccountLatency(candidate, 45_000);

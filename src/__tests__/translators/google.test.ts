@@ -30,6 +30,10 @@ describe('toAiStudioModelId', () => {
     expect(toAiStudioModelId('gemini-4-hydrogen')).toBe('gemini-4-hydrogen');
     expect(toAiStudioModelId('gemini-3.8-flash')).toBe('gemini-3.8-flash');
   });
+
+  it('maps gemini-4-hydrogen-sonar to real AI Studio model gemini-4-hydrogen', () => {
+    expect(toAiStudioModelId('gemini-4-hydrogen-sonar')).toBe('gemini-4-hydrogen');
+  });
 });
 
 // ── mapGeminiToGoogle — model resolution priority ────────────────────────────
