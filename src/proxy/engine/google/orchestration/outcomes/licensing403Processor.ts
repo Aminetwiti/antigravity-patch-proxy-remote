@@ -53,12 +53,24 @@ export async function processOutcome403(
   }
 
   const quarantineMs = isLicenseError ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
-  log.warn(
-    `[Proxy] Account ${candidateName} received HTTP 403. Placing in ${Math.round(quarantineMs / 3600000)}h quarantine.`,
-  );
-  if (isLicenseError) markAccountUnlicensed(candidate);
-  setAccountCooldown(candidate, quarantineMs);
-  setAccountCooldown(candidate, quarantineMs, 'gemini');
-  setAccountCooldown(candidate, quarantineMs, 'claude');
-  if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+  const isAccountWideRestriction = isValidationRequired || /suspended|account.*restricted|underage|minor/i.test(state.lastErrorText);
+
+  if (isAccountWideRestriction) {
+    log.warn(
+      `[Proxy] Account ${candidateName} received HTTP 403 (account-level restriction). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine.`,
+    );
+    if (isLicenseError) markAccountUnlicensed(candidate);
+    setAccountCooldown(candidate, quarantineMs);
+    setAccountCooldown(candidate, quarantineMs, 'gemini');
+    setAccountCooldown(candidate, quarantineMs, 'claude');
+    if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+  } else {
+    // Model-specific licensing / tier permission 403 (e.g. Sonar or Claude on free tier):
+    // Only quarantine the specific model family so remaining models (e.g. Gemini 3.8 Flash) remain fully available!
+    const targetFamily = modelFamily || 'gemini';
+    log.warn(
+      `[Proxy] Account ${candidateName} received HTTP 403 for model family [${targetFamily}]. Quarantining only [${targetFamily}] for ${Math.round(quarantineMs / 3600000)}h.`,
+    );
+    setAccountCooldown(candidate, quarantineMs, targetFamily);
+  }
 }

@@ -1,7 +1,46 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'fs';
+
+// Mock electron
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn((name: string) => {
+      if (name === 'home') return '/mock/home';
+      return '/mock/' + name;
+    }),
+  },
+}));
+
+// Mock electron-log
+vi.mock('electron-log', () => ({
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
+// Mock cryptoStore
+vi.mock('../../compat/cryptoStore', () => ({
+  encryptModels: vi.fn((models: unknown[]) => models),
+  decryptModels: vi.fn((models: unknown[]) => models),
+  backupFile: vi.fn(),
+}));
+
+// Mock fs
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return {
+    ...actual,
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+  };
+});
+
 import { loadCustomModels } from '../../proxy/models/catalog/modelLoader';
 import { injectCustomModelsIntoUserStatus } from '../../proxy/models/protobuf/protoInjector';
-import * as fs from 'fs';
 
 describe('Verify 5 Custom Models Unhidden', () => {
   it('loads 5 distinct pooled Google models and unhides them into the dropdown', () => {
@@ -35,8 +74,8 @@ describe('Verify 5 Custom Models Unhidden', () => {
       ],
     };
 
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
-    vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify(fixture));
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(fixture));
 
     const models = loadCustomModels();
     const dropdownVisible = models.filter((m) => !m._poolOnly);
