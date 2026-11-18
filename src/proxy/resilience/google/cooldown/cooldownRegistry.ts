@@ -12,6 +12,7 @@ import {
   accountProbationUntil,
   quotaExhaustedAccountKeys,
   rateLimitedCooldownKeys,
+  fleetModelCooldowns,
 } from './cooldownState';
 import { getModelQuotaScore } from '../selection/scoring';
 import { accountRecentBurstCount } from '../concurrency/rateLimiter';
@@ -232,10 +233,48 @@ export function getSoonestAccountCooldownRemaining(
   return null;
 }
 
+export function setFleetModelCooldown(
+  modelOrFamily: string,
+  durationMs = 30_000,
+  reason = 'Fleet 429 saturation',
+): void {
+  if (!modelOrFamily) return;
+  const key = modelOrFamily.trim().toLowerCase();
+  const until = Date.now() + Math.max(5000, durationMs);
+  fleetModelCooldowns.set(key, { until, reason });
+  log.warn(`[Proxy] 🛑 [Fleet Cooldown] Enforcing ${Math.round(durationMs / 1000)}s cooldown for fleet model/family "${key}" (${reason}).`);
+}
+
+export function getFleetModelCooldown(
+  modelOrFamily: string,
+): { active: boolean; remainingMs: number; reason: string } {
+  if (!modelOrFamily) return { active: false, remainingMs: 0, reason: '' };
+  const key = modelOrFamily.trim().toLowerCase();
+  const entry = fleetModelCooldowns.get(key);
+  if (!entry) return { active: false, remainingMs: 0, reason: '' };
+
+  const remaining = entry.until - Date.now();
+  if (remaining <= 0) {
+    fleetModelCooldowns.delete(key);
+    return { active: false, remainingMs: 0, reason: '' };
+  }
+
+  return { active: true, remainingMs: remaining, reason: entry.reason };
+}
+
+export function clearFleetModelCooldown(modelOrFamily?: string): void {
+  if (modelOrFamily) {
+    fleetModelCooldowns.delete(modelOrFamily.trim().toLowerCase());
+  } else {
+    fleetModelCooldowns.clear();
+  }
+}
+
 export function _resetAllAccountCooldowns(): void {
   googleAccountCooldowns.clear();
   accountProbationUntil.clear();
   quotaExhaustedAccountKeys.clear();
   rateLimitedCooldownKeys.clear();
   accountRecentBurstCount.clear();
+  fleetModelCooldowns.clear();
 }

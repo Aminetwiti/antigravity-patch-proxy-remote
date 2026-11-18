@@ -483,7 +483,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
         refreshToken: undefined,
         accountName: '',
         accountEmail: '',
-        _poolOnly: (baseId !== 'gemini-3.8-flash-tiered') ? (true as const) : undefined,
+        _poolOnly: undefined,
         _effortSuffix: template._effortSuffix || '',
       });
     });

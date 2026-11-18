@@ -101,7 +101,7 @@ import {
   sanitizeCandidatesInResponse,
   writeSafeSseChunk,
 } from '../stream/streamPipeline';
-import { executeGoogleCloudCodeWithPool } from './googleCloudEngine';
+import { executeGoogleCloudCodeWithPool } from '../google/orchestration/loop/poolOrchestrator';
 
 export type { RetryDispatch, StreamRequestCtx };
 
@@ -113,6 +113,21 @@ type RetryDispatch = (
   delayMs: number,
   logReason: string,
 ) => void;
+
+function safeExecuteGoogleCloudCodeWithPool(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reqJson: Record<string, unknown>,
+  accountPool: CustomModel[],
+  isSessionRemote: boolean,
+  convId: string,
+  sessId: string | null,
+): Promise<boolean> {
+  const fn = typeof executeGoogleCloudCodeWithPool === 'function'
+    ? executeGoogleCloudCodeWithPool
+    : (require('../google/orchestration/loop/poolOrchestrator') as typeof import('../google/orchestration/loop/poolOrchestrator')).executeGoogleCloudCodeWithPool;
+  return fn(req, res, reqJson, accountPool, isSessionRemote, convId, sessId);
+}
 
 interface StreamRequestCtx {
   res: http.ServerResponse;
@@ -872,7 +887,7 @@ export function handleCustomModelRequest(
         method: 'POST',
         headers: {},
       } as unknown as http.IncomingMessage;
-      void executeGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', null);
+      void safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', null);
       return;
     }
     log.error(`[Proxy] Cannot route virtual auto-pool or keyless model ${model.name} to translator without valid API key.`);
@@ -1102,7 +1117,7 @@ export function handleCustomModelRequest(
               method: 'POST',
               headers: {},
             } as unknown as http.IncomingMessage;
-            executeGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId);
+            safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId);
             return true;
           }
 

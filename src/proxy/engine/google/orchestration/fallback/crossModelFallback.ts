@@ -1,4 +1,4 @@
-﻿import log from 'electron-log';
+import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import type { FallbackParams } from './types';
 import {
@@ -46,7 +46,7 @@ export async function attemptCrossModelFallback(
   const allModelBases: string[] = [
     ...new Set<string>(
       allCustomModels
-        .filter((m) => isGoogleCloudCodeModel(m) && !getOpenBreaker(m) && m.apiKey !== 'auto')
+        .filter((m) => isGoogleCloudCodeModel(m) && !getOpenBreaker(m) && !m.apiKey?.startsWith('fallback:'))
         .map((m) => normalizeCloudCodeModelId(m.externalModelName || m.name))
         .filter(
           (b): b is string =>

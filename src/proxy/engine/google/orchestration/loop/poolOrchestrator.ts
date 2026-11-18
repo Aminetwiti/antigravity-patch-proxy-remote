@@ -42,7 +42,7 @@ import { getOpenBreaker, recordFailure } from '../../../../resilience/circuitBre
 import { evictAgent } from '../../../../resilience/agentPool';
 import { invalidateCachedDns } from '../../../../http/dnsResolver';
 import { sessionAffinities } from '../../../../resilience/sessionAffinities';
-import { GOOGLE_HOSTS, RATE_LIMIT_RELIEF_WAIT_MS } from '../../../../../constants';
+import { GOOGLE_HOSTS, RATE_LIMIT_RELIEF_WAIT_MS, MAX_RELIEF_WAIT_MS } from '../../../../../constants';
 
 export async function executeGoogleCloudCodeWithPool(
   req: http.IncomingMessage,
@@ -260,15 +260,28 @@ export async function executeGoogleCloudCodeWithPool(
   if (fbOk) return true;
 
   if (state.lastStatus === 429 && fallbackDepth === 0 && process.env.AG_DISABLE_RATE_LIMIT_RELIEF !== '1' && process.env.NODE_ENV !== 'test' && !process.env.VITEST && !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
-    const soonest = getSoonestAccountCooldownRemaining(accountPool, modelFamily, RATE_LIMIT_RELIEF_WAIT_MS);
-    if (soonest) {
-      const waitMs = soonest.remainingMs > 0 ? Math.min(soonest.remainingMs + 800, RATE_LIMIT_RELIEF_WAIT_MS) : 15_000;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, waitMs);
-        if (typeof res?.once === 'function') res.once('close', () => { clearTimeout(timer); resolve(); });
-      });
-      if (!res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
-        return executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, isSessionRemote, convId, sessId, attemptedModels, fallbackDepth + 1);
+    const elapsedSoFar = Date.now() - poolLoopStartTime;
+    const maxReliefWaitMs = Math.min(MAX_RELIEF_WAIT_MS, RATE_LIMIT_RELIEF_WAIT_MS);
+    if (elapsedSoFar < 50_000) {
+      const soonest = getSoonestAccountCooldownRemaining(accountPool, modelFamily, maxReliefWaitMs);
+      if (soonest && soonest.remainingMs > 0 && (elapsedSoFar + soonest.remainingMs) < 65_000) {
+        const waitMs = Math.min(soonest.remainingMs + 800, maxReliefWaitMs);
+        log.info(`[Proxy] ⏳ All accounts rate-limited for ${modelFamily}. Soonest cooldown expires in ${Math.round(waitMs / 1000)}s (${soonest.candidate.accountEmail || soonest.candidate.name}). Waiting for relief...`);
+        await new Promise<void>((resolve) => {
+          let timer: NodeJS.Timeout | null = null;
+          const onClose = () => {
+            if (timer) clearTimeout(timer);
+            resolve();
+          };
+          timer = setTimeout(() => {
+            if (typeof res?.removeListener === 'function') res.removeListener('close', onClose);
+            resolve();
+          }, waitMs);
+          if (typeof res?.once === 'function') res.once('close', onClose);
+        });
+        if (!res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
+          return executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, isSessionRemote, convId, sessId, attemptedModels, fallbackDepth + 1);
+        }
       }
     }
   }

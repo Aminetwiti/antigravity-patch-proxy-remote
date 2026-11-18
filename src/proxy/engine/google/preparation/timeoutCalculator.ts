@@ -70,7 +70,7 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
 
   let dynamicAdaptiveTimeout: number;
   if (updatedBody.length > 150_000) {
-    dynamicAdaptiveTimeout = 85_000;
+    dynamicAdaptiveTimeout = 70_000;
   } else if (updatedBody.length > 60_000 || isThinkingModel) {
     dynamicAdaptiveTimeout = 60_000;
   } else if (isContextualPayload || updatedBody.length > 25_000) {
@@ -102,7 +102,9 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
           ? 80_000
           : 65_000
         : 55_000
-      : 85_000,
+      : (hasOtherCandidates && healthySiblingAccountsCount >= 1
+          ? Math.min(65_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)
+          : 70_000),
     GOOGLE_PROXY_TIMEOUT_MS,
   );
 

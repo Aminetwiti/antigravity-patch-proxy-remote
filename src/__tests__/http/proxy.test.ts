@@ -162,6 +162,18 @@ describe('matchesCustomModel', () => {
     expect(matchesCustomModel(flashMed, '🟢 • Gemini 3.8 Flash (Low)')).toBe(false);
     expect(matchesCustomModel(flashMed, '🟢 • Gemini 3.8 Flash (High)')).toBe(false);
   });
+
+  it('safely handles undefined, null, empty, or malformed models without throwing', () => {
+    expect(matchesCustomModel(null as any, 'gemini-3.8-flash-tiered')).toBe(false);
+    expect(matchesCustomModel(undefined as any, 'gemini-3.8-flash-tiered')).toBe(false);
+    expect(matchesCustomModel({} as any, 'gemini-3.8-flash-tiered')).toBe(false);
+    expect(matchesCustomModel({ name: undefined } as any, 'gemini-3.8-flash-tiered')).toBe(false);
+    expect(matchesCustomModel({ name: null } as any, 'gemini-3.8-flash-tiered')).toBe(false);
+    expect(matchesCustomModel({ displayName: 'test' } as any, 'gemini-3.8-flash-tiered')).toBe(false);
+    expect(matchesCustomModel({ name: 123 } as any, 'gemini-3.8-flash-tiered')).toBe(false);
+    expect(matchesCustomModel({ name: 'test' } as any, null as any)).toBe(false);
+    expect(matchesCustomModel({ name: 'test' } as any, undefined as any)).toBe(false);
+  });
 });
 
 describe('isNativeCloudCodeModel', () => {

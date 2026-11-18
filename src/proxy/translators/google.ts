@@ -32,7 +32,7 @@ export { normalizeGoogleModelId };
  */
 export function toAiStudioModelId(modelName: string): string {
   const norm = normalizeGoogleModelId(modelName);
-  return norm.replace(/-tiered$/, '').replace(/-high$/, '');
+  return norm.replace(/-tiered$/, '').replace(/-(low|medium|high)$/i, '');
 }
 
 // ─── Request Translation (Passthrough) ────────────────────────────────────
@@ -51,7 +51,12 @@ export function mapGeminiToGoogle(geminiBody: GeminiRequestBody, modelName: stri
     raw = { ...input };
   }
 
-  const effectiveModel = (raw.model as string) || (input.model as string) || modelName || '';
+  // The caller-supplied modelName is the authoritative target (e.g. the cascade/fallback
+  // model such as "gemini-4-hydrogen"). The request body may still contain a stale
+  // MODEL_PLACEHOLDER_ or the original tiered model ID (e.g. gemini-3.8-flash-medium)
+  // from the Cloud Code envelope — always prefer modelName when it is provided.
+  const bodyModel = (raw.model as string) || (input.model as string) || '';
+  const effectiveModel = modelName || bodyModel;
   const targetModel = toAiStudioModelId(effectiveModel);
 
   // Only set body.model if body originally specified a model; Google AI Studio passes model in the URL path

@@ -199,8 +199,12 @@ export async function handleCloudCodeGenerationRoute(
             const currentEntry = getSessionModelFallback(sessionKey);
             if (currentEntry) {
               const currentFb = currentEntry.fallbackModel;
-              const isFallback = matchesCustomModel(customModels.find((m) => m.name === currentFb) || {} as CustomModel, cleanRequested);
-              const isOriginal = candidateNames.slice(1).some((cn) => matchesCustomModel(customModels.find((m) => m.name === cn) || {} as CustomModel, currentFb));
+              const fbModel = customModels.find((m) => matchesCustomModel(m, currentFb));
+              const isFallback = fbModel ? matchesCustomModel(fbModel, cleanRequested) : false;
+              const isOriginal = candidateNames.slice(1).some((cn) => {
+                const origModel = customModels.find((m) => matchesCustomModel(m, cn));
+                return origModel ? matchesCustomModel(origModel, currentFb) : false;
+              });
               if (!isFallback && !isOriginal) {
                 setSessionModelFallback(sessionKey, currentEntry.originalModel, cleanRequested);
               }

@@ -154,6 +154,9 @@ export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);
 /** Maximum time to wait for a 429 rate-limited account cooldown to expire before failing (default: 65 seconds). */
 export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS', 65_000);
 
+/** Maximum single-burst relief wait time (ms) for an account cooldown in pool rotation (default: 15,000ms). Configurable via AG_MAX_RELIEF_WAIT_MS. */
+export const MAX_RELIEF_WAIT_MS = getEnvInt('AG_MAX_RELIEF_WAIT_MS', 15_000);
+
 /** Speculative hedged request delay for streaming pools (default: 2,500ms). If no headers arrive in 2.5s, hedge with next candidate. */
 export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2_500);
 

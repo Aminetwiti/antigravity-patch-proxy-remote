@@ -11,6 +11,9 @@ export const quotaExhaustedAccountKeys = new Set<string>();
 // Tracks accounts placed in short rate-limit/burst cooldowns so quota poller doesn't prematurely wake them
 export const rateLimitedCooldownKeys = new Set<string>();
 
+// Tracks whole-fleet model cooldowns when a 429 Fleet Circuit Breaker trips across multiple accounts
+export const fleetModelCooldowns = new Map<string, { until: number; reason: string }>();
+
 export function markAccountQuotaExhausted(key: string, modelFamily?: string): void {
   const normKey = key.startsWith('google:') ? key : `google:${key}`;
   const rawKey = key.replace(/^google:/, '');

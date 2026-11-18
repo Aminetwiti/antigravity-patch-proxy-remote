@@ -263,6 +263,7 @@ export function injectCustomModelsIntoResponse(
       const effort = m._effortSuffix || '';
 
       const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const isPoolModel = (m.displayName || '').startsWith('[Pool]') || m.name.includes(':auto-pool');
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
@@ -270,11 +271,13 @@ export function injectCustomModelsIntoResponse(
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
-                : (rawName || 'gemini-3.8-flash-tiered')))
+                : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
+                    : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
       const modelDedupKey = isGoogleFamily
-        ? `google-unified:${canonicalBase}${effort}`
+        ? (isPoolModel ? `google-pool:${canonicalBase}${effort}` : `google-unified:${canonicalBase}${effort}`)
         : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
@@ -420,10 +423,13 @@ function injectCustomModelsIntoUserStatusJson(
       const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
       const labelLower = label.toLowerCase();
       const idLower = modelId.toLowerCase();
+      // Ne marquer Unavailable QUE les modèles natifs officiels de Google (pas les modèles personnalisés injectés)
+      const isCustomInjected = idLower.includes('model_placeholder_') || label.includes('🟣') || label.includes('◆') || label.includes('[Pool]');
       if (
-        labelLower.includes('carbon') || idLower.includes('carbon') ||
-        labelLower.includes('argon') || idLower.includes('argon') ||
-        labelLower.includes('hydrogen') || idLower.includes('hydrogen')
+        !isCustomInjected &&
+        (labelLower.includes('carbon') || idLower.includes('carbon') ||
+         labelLower.includes('argon') || idLower.includes('argon') ||
+         labelLower.includes('hydrogen') || idLower.includes('hydrogen'))
       ) {
         c.tagTitle = 'Unavailable';
         c.tagDescription = 'Unavailable';
@@ -493,6 +499,7 @@ function injectCustomModelsIntoUserStatusJson(
       const effort = m._effortSuffix || '';
 
       const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const isPoolModel = (m.displayName || '').startsWith('[Pool]') || m.name.includes(':auto-pool');
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
@@ -500,11 +507,13 @@ function injectCustomModelsIntoUserStatusJson(
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
-                : (rawName || 'gemini-3.8-flash-tiered')))
+                : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
+                    : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
       const modelDedupKey = isGoogleFamily
-        ? `google-unified:${canonicalBase}${effort}`
+        ? (isPoolModel ? `google-pool:${canonicalBase}${effort}` : `google-unified:${canonicalBase}${effort}`)
         : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
@@ -710,6 +719,7 @@ export function injectCustomModelsIntoUserStatus(
       const effort = m._effortSuffix || '';
 
       const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const isPoolModel = (m.displayName || '').startsWith('[Pool]') || m.name.includes(':auto-pool');
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
@@ -717,11 +727,13 @@ export function injectCustomModelsIntoUserStatus(
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
-                : (rawName || 'gemini-3.8-flash-tiered')))
+                : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
+                    : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
       const modelDedupKey = isGoogleFamily
-        ? `google-unified:${canonicalBase}${effort}`
+        ? (isPoolModel ? `google-pool:${canonicalBase}${effort}` : `google-unified:${canonicalBase}${effort}`)
         : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;

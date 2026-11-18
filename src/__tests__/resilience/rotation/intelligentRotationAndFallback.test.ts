@@ -30,6 +30,7 @@ import {
   clearAccountCooldown,
   trimOldestHistory,
 } from '../../../proxy';
+import { attemptCrossModelFallback } from '../../../proxy/engine/google/orchestration/fallback/crossModelFallback';
 import type { CustomModel } from '../../../types';
 
 describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
@@ -544,6 +545,68 @@ describe('Intelligent Account Rotation and Smart Fallback Recovery', () => {
         GOOGLE_PROXY_TIMEOUT_MS,
       );
       expect(largeTimeoutMs).toBe(65_000);
+    });
+
+    it('handles simultaneous Google + Anthropic saturation gracefully without infinite cascade', async () => {
+      const googleModel: CustomModel = {
+        name: 'gemini-3.8-flash-tiered',
+        externalModelName: 'gemini-3.8-flash-tiered',
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        accountEmail: 'user@gmail.com',
+        apiKey: 'ya29.mock-google',
+        enabled: true,
+      };
+      const claudeModel: CustomModel = {
+        name: 'claude-sonnet-4-6',
+        externalModelName: 'claude-sonnet-4-6',
+        provider: 'google',
+        apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+        accountEmail: 'user@gmail.com',
+        apiKey: 'ya29.mock-claude',
+        enabled: true,
+      };
+
+      // Both Google and Claude are saturated in cooldown
+      setAccountCooldown(googleModel, 60_000, 'gemini', true);
+      setAccountCooldown(claudeModel, 60_000, 'claude', true);
+
+      const allModels = [googleModel, claudeModel];
+      const attempted = new Set<string>(['gemini-3.8-flash-tiered']);
+
+      const mockReq: any = { url: '/v1internal:streamGenerateContent?alt=sse' };
+      const mockRes: any = { destroyed: false, socket: { destroyed: false } };
+      const mockReqJson: any = { model: 'gemini-3.8-flash-tiered', contents: [] };
+
+      const poolExecutorMock = vi.fn().mockResolvedValue(false);
+
+      const result = await attemptCrossModelFallback(
+        {
+          req: mockReq,
+          res: mockRes,
+          reqJson: mockReqJson,
+          accountPool: [googleModel],
+          isSessionRemote: false,
+          convId: 'test-conv-saturation',
+          sessId: null,
+          attemptedModels: attempted,
+          fallbackDepth: 0,
+          lastStatus: 429,
+          lastErrorText: 'HTTP 429 Rate limit across all Google accounts',
+          targetRaw: 'gemini-3.8-flash-tiered',
+          poolExecutor: poolExecutorMock,
+        },
+        allModels,
+        'gemini-3.8-flash-tiered',
+        false,
+      );
+
+      // Saturated Claude accounts should not be called, resulting in clean false without cascading
+      expect(result).toBe(false);
+      expect(poolExecutorMock).not.toHaveBeenCalled();
+
+      clearAccountCooldown(googleModel, 'gemini');
+      clearAccountCooldown(claudeModel, 'claude');
     });
   });
 });

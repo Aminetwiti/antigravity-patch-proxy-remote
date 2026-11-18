@@ -453,7 +453,7 @@ export function extractModelNameFromPayload(body: unknown): string {
  */
 
 export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
-  if (!candidate || typeof candidate !== 'string') return false;
+  if (!m || typeof m !== 'object' || typeof m.name !== 'string' || !m.name || !candidate || typeof candidate !== 'string') return false;
   // An original native model string without custom- prefix is an IDE native selection, never a custom model
   if (!candidate.startsWith('custom-') && !/MODEL_PLACEHOLDER_/i.test(candidate) && isNativeCloudCodeModel(candidate)) {
     return false;
@@ -487,11 +487,17 @@ export function matchesCustomModel(m: CustomModel, candidate: string): boolean {
     return false;
   }
 
+  const mName = m.name || '';
+  const mNameClean = mName.replace(/^models\//, '');
+  const mNameCleanLower = mNameClean.toLowerCase();
+
   return (
-    m.name === candidate ||
-    m.name === clean ||
-    m.name.replace(/^models\//, '') === clean ||
-    m.name.replace(/^models\//, '').toLowerCase() === cleanLower ||
+    (Boolean(mName) && (
+      mName === candidate ||
+      mName === clean ||
+      mNameClean === clean ||
+      mNameCleanLower === cleanLower
+    )) ||
     slug === candidate ||
     slug === clean ||
     slugLower === candLower ||
