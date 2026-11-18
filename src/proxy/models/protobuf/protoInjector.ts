@@ -105,8 +105,7 @@ export function parseGrpcWebHeader(buf: Buffer): { flags: number; msgLen: number
 export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult | null): string {
   const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
   const star = isFav ? '⭐ ' : '';
-  let name = m.displayName || m.name;
-  if (!name.startsWith('[Pool]')) name = name.replace(/^\[[^\]]+\]\s*/, '');
+  let name = (m.displayName || m.name).replace(/^\[[^\]]+\]\s*/, '').trim();
   
   if (!health || health.status === 'healthy' || health.status === 'slow') {
     return `${star}🟣 ◆ ${name}`;
@@ -277,7 +276,7 @@ export function injectCustomModelsIntoResponse(
         : rawName;
 
       const modelDedupKey = isGoogleFamily
-        ? (isPoolModel ? `google-pool:${canonicalBase}${effort}` : `google-unified:${canonicalBase}${effort}`)
+        ? `google-unified:${canonicalBase}${effort}`
         : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
@@ -513,7 +512,7 @@ function injectCustomModelsIntoUserStatusJson(
         : rawName;
 
       const modelDedupKey = isGoogleFamily
-        ? (isPoolModel ? `google-pool:${canonicalBase}${effort}` : `google-unified:${canonicalBase}${effort}`)
+        ? `google-unified:${canonicalBase}${effort}`
         : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;
@@ -556,7 +555,7 @@ function injectCustomModelsIntoUserStatusJson(
           'g1-ultra-tier',
           'ultra-tier',
         ],
-        tagTitle: m.provider ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : 'Custom',
+        tagTitle: (m.provider && m.provider !== 'google' && m.provider !== 'google-gemini') ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : undefined,
         quotaInfo: {
           remainingFraction: 1,
           resetTime: '2099-01-01T00:00:00Z',
@@ -733,7 +732,7 @@ export function injectCustomModelsIntoUserStatus(
         : rawName;
 
       const modelDedupKey = isGoogleFamily
-        ? (isPoolModel ? `google-pool:${canonicalBase}${effort}` : `google-unified:${canonicalBase}${effort}`)
+        ? `google-unified:${canonicalBase}${effort}`
         : `${m.provider}:${cleanDisp || rawName}:${rawName}${effort}`;
 
       if (seenModelKeys.has(modelDedupKey)) continue;

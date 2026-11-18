@@ -12,6 +12,18 @@ import {
 } from '../../../../resilience/pools/sessionAffinities';
 
 type HandleCustomModelRequestFn = (typeof import('../../../executors/customModelEngine'))['handleCustomModelRequest'];
+let cachedHandleCustomModelRequest: HandleCustomModelRequestFn | null = null;
+
+function getCustomModelHandler(): HandleCustomModelRequestFn {
+  if (!cachedHandleCustomModelRequest) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('../../../executors/customModelEngine') as {
+      handleCustomModelRequest: HandleCustomModelRequestFn;
+    };
+    cachedHandleCustomModelRequest = mod.handleCustomModelRequest;
+  }
+  return cachedHandleCustomModelRequest;
+}
 
 export async function attemptExternalCascade(
   params: FallbackParams,
@@ -70,11 +82,8 @@ export async function attemptExternalCascade(
       }
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { handleCustomModelRequest } = require('../../../executors/customModelEngine') as {
-          handleCustomModelRequest: HandleCustomModelRequestFn;
-        };
-        handleCustomModelRequest(res, fallbackModel, actualGeminiBody, isStream);
+        const handler = getCustomModelHandler();
+        handler(res, fallbackModel, actualGeminiBody, isStream);
         if (sessionKey && fi === 0) {
           setSessionModelFallback(sessionKey, currentBase, fallbackModel.displayName || fallbackModel.name, true);
         }

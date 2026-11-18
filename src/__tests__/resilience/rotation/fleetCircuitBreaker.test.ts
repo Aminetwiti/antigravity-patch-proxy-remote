@@ -4,6 +4,10 @@ import type { CustomModel } from '../../../proxy/core/types';
 import type { GoogleRequestOutcome } from '../../../proxy/engine/google/direct/types';
 import { createInitialPoolLoopState } from '../../../proxy/engine/google/orchestration/types';
 import { processOutcome429 } from '../../../proxy/engine/google/orchestration/outcomes/quota429Processor';
+import {
+  getFleetModelCooldown,
+  clearFleetModelCooldown,
+} from '../../../proxy/resilience/google/cooldown/cooldownRegistry';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/mock/home' },
@@ -23,6 +27,7 @@ describe('Fleet Circuit Breaker & Large Pool Resilience', () => {
 
   beforeEach(() => {
     delete process.env.AG_BURST_429_THRESHOLD;
+    clearFleetModelCooldown();
   });
 
   afterEach(() => {
@@ -166,5 +171,41 @@ describe('Fleet Circuit Breaker & Large Pool Resilience', () => {
     expect(state.consecutive429Count).toBe(6);
     expect(result.breakLoop).toBe(true);
     expect(result.continueNext).toBe(false);
+
+    // Fleet cooldown should now be active across model and family
+    const modelCd = getFleetModelCooldown('gemini-3.8-flash-tiered');
+    expect(modelCd.active).toBe(true);
+    expect(modelCd.remainingMs).toBeGreaterThan(0);
+    expect(modelCd.reason).toContain('Fleet 429 burst');
+
+    const familyCd = getFleetModelCooldown('gemini-flash');
+    expect(familyCd.active).toBe(true);
+    expect(familyCd.remainingMs).toBeGreaterThan(0);
+  });
+
+  it('allows clearing fleet model cooldown', () => {
+    const fleet = createMockAccounts(4);
+    const state = createInitialPoolLoopState();
+    state.consecutive429Count = 3;
+
+    const res = createMockResponse();
+    processOutcome429(
+      fleet[3],
+      fleet[3].name,
+      'gemini-flash',
+      'gemini-3.8-flash-tiered',
+      rateLimitOutcome,
+      300,
+      null,
+      fleet,
+      3,
+      4,
+      res,
+      state,
+    );
+
+    expect(getFleetModelCooldown('gemini-3.8-flash-tiered').active).toBe(true);
+    clearFleetModelCooldown('gemini-3.8-flash-tiered');
+    expect(getFleetModelCooldown('gemini-3.8-flash-tiered').active).toBe(false);
   });
 });

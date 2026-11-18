@@ -37,6 +37,7 @@ import {
   recordAccountLatency,
   setAccountCooldown,
   getSoonestAccountCooldownRemaining,
+  getFleetModelCooldown,
 } from '../../../../resilience/googlePool';
 import { getOpenBreaker, recordFailure } from '../../../../resilience/circuitBreaker';
 import { evictAgent } from '../../../../resilience/agentPool';
@@ -73,6 +74,34 @@ export async function executeGoogleCloudCodeWithPool(
   const totalAttempts = sortedAccounts.length;
   const initialHealthyCount = sortedAccounts.filter((a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0).length;
   const allowOptimisticProbe = initialHealthyCount === 0 && sortedAccounts.length > 0;
+
+  const fleetCooldown = getFleetModelCooldown(resolvedTarget).active
+    ? getFleetModelCooldown(resolvedTarget)
+    : getFleetModelCooldown(modelFamily);
+
+  if (fleetCooldown.active && fallbackDepth === 0 && sortedAccounts.length > 1) {
+    log.warn(
+      `[Proxy] 🛑 [Fleet Cooldown] Active for [${resolvedTarget}] (${Math.round(fleetCooldown.remainingMs / 1000)}s remaining - ${fleetCooldown.reason}). Fast-skipping loop directly to fallback cascade.`,
+    );
+    state.lastStatus = 429;
+    state.lastErrorText = `Fleet 429 cooldown active for ${resolvedTarget}: ${fleetCooldown.reason}`;
+    const fbOk = await attemptFallbackCascade({
+      req,
+      res,
+      reqJson,
+      accountPool,
+      isSessionRemote,
+      convId,
+      sessId,
+      attemptedModels,
+      fallbackDepth,
+      lastStatus: state.lastStatus,
+      lastErrorText: state.lastErrorText,
+      targetRaw,
+      poolExecutor: executeGoogleCloudCodeWithPool,
+    });
+    if (fbOk) return true;
+  }
 
   if (initialHealthyCount === 0 && sortedAccounts.length > 0) {
     state.lastStatus = 429;
