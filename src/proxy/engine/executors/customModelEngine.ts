@@ -1002,7 +1002,7 @@ export function handleCustomModelRequest(
       }
 
       const isServerOverload = diagnostic.errorType === 'server' && (diagnostic.title?.includes('503') || diagnostic.title?.includes('Capacity'));
-      const isFleetRateLimit = diagnostic.errorType === 'rate_limit' && (diagnostic.title?.includes('Edge IP') || diagnostic.title?.includes('Fleet') || diagnostic.detail?.includes('Fleet 429'));
+      const isFleetRateLimit = diagnostic.errorType === 'rate_limit' && (diagnostic.title?.includes('Edge IP') || diagnostic.title?.includes('Fleet') || diagnostic.message?.includes('Fleet 429'));
       const hasExplicitChain = chainItems.length > 0;
       const allowCrossModel = hasExplicitChain || process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
       if (allowCrossModel && (poolSiblings.length > 0 || chainItems.length > 0)) {

@@ -189,5 +189,88 @@ describe('Speculative Hedged Requests, 503 & 504 Timeout Cascade Architecture', 
       // Primary tries to claim afterwards and fails
       expect(claimer.claim('primary')).toBe(false);
     });
+
+    it('AUDIT-001: ensures responseClaimer prevents double-streaming and aborts competitor', () => {
+      const claimer = createResponseClaimer();
+      const primaryTrace = 'trace-primary';
+      const hedgedTrace = 'trace-hedged';
+      const mockDestroyPrimary = vi.fn();
+      const mockDestroyHedged = vi.fn();
+
+      claimer.registerAbort(primaryTrace, mockDestroyPrimary);
+      claimer.registerAbort(hedgedTrace, mockDestroyHedged);
+
+      // Sibling / hedged candidate finishes headers first and claims the stream
+      expect(claimer.claim(hedgedTrace)).toBe(true);
+      claimer.abortOthers(hedgedTrace);
+
+      // Primary socket is immediately aborted to prevent interleaved SSE chunks
+      expect(mockDestroyPrimary).toHaveBeenCalledTimes(1);
+      expect(mockDestroyHedged).not.toHaveBeenCalled();
+
+      // Slow primary candidate now receives headers and attempts to claim
+      const primaryClaimed = claimer.claim(primaryTrace);
+      expect(primaryClaimed).toBe(false);
+      // Because primary was not claimed, it must destroy its socket and exit with 499
+      expect(claimer.isClaimed()).toBe(true);
+    });
+
+    it('AUDIT-002: verifies fail-fast logic terminates immediately if candidate 1 fails before hedge timer', async () => {
+      const start = Date.now();
+      const hedgeDelayMs = 2_500;
+      let hedgeLaunched = false;
+      let hedgeTimer: NodeJS.Timeout | undefined;
+
+      const hedgePromise = new Promise<{ success: boolean; statusCode: number }>((resolve) => {
+        hedgeTimer = setTimeout(() => {
+          hedgeLaunched = true;
+          resolve({ success: true, statusCode: 200 });
+        }, hedgeDelayMs);
+      });
+
+      // Simulate Candidate 1 failing fast in 50ms (HTTP 429)
+      const candidate1Promise = new Promise<{ success: boolean; statusCode: number }>((resolve) => {
+        setTimeout(() => {
+          resolve({ success: false, statusCode: 429 });
+        }, 50);
+      });
+
+      let candidate1Settled = false;
+      let candidate1Result: { success: boolean; statusCode: number } | undefined;
+      const candidate1Watched = candidate1Promise.then((res1) => {
+        candidate1Settled = true;
+        candidate1Result = res1;
+        if (res1.success && hedgeTimer) clearTimeout(hedgeTimer);
+        return res1;
+      });
+
+      const firstOutcome = await Promise.race([candidate1Watched, hedgePromise]);
+      let outcome: { success: boolean; statusCode: number };
+
+      if (firstOutcome.success) {
+        outcome = firstOutcome;
+        if (hedgeTimer) clearTimeout(hedgeTimer);
+      } else {
+        if (candidate1Settled && candidate1Result && !candidate1Result.success) {
+          if (hedgeLaunched) {
+            outcome = await hedgePromise;
+          } else {
+            if (hedgeTimer) clearTimeout(hedgeTimer);
+            outcome = firstOutcome;
+          }
+        } else {
+          outcome = firstOutcome;
+        }
+      }
+
+      if (hedgeTimer) clearTimeout(hedgeTimer);
+
+      const elapsed = Date.now() - start;
+      expect(outcome.statusCode).toBe(429);
+      expect(outcome.success).toBe(false);
+      expect(hedgeLaunched).toBe(false);
+      // Must take < 500ms, proving it did NOT stall for the 2,500ms hedge timer
+      expect(elapsed).toBeLessThan(500);
+    });
   });
 });

@@ -468,8 +468,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
 
     const isUnsupportedCloudCodeModel = (name: string) => {
       const lower = (name || '').toLowerCase();
-      if (lower.includes('sonar')) return false;
-      return lower.includes('argon') || lower.includes('carbon') || lower.includes('hydrogen');
+      return lower.includes('argon') || lower.includes('carbon');
     };
 
     const seenBaseIds = new Map<string, CustomModel>();
@@ -481,7 +480,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
       if (isUnsupportedCloudCodeModel(rawLower) && isGoogleCloudCodeModel(m)) {
         continue;
       }
-      const baseId = normalizeCloudCodeModelId(raw);
+      const baseId = rawLower === 'gemini-4-hydrogen' ? 'gemini-4-hydrogen' : normalizeCloudCodeModelId(raw);
       if (isUnsupportedCloudCodeModel(baseId) && isGoogleCloudCodeModel(m)) {
         continue;
       }
@@ -497,8 +496,8 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
       if (baseId === 'gemini-3.8-flash-tiered' && (!displayName || displayName === baseId)) displayName = 'Gemini 3.8 Flash';
       else if (baseId === 'claude-sonnet-4-6' && (!displayName || displayName === baseId)) displayName = 'Claude Sonnet 4.6 (Thinking)';
       else if (baseId === 'claude-opus-4-6-thinking' && (!displayName || displayName === baseId)) displayName = 'Claude Opus 4.6 (Thinking)';
-      else if (baseId === 'gemini-4-hydrogen-sonar' && (!displayName || displayName === baseId || displayName.includes('gemini-4-hydrogen'))) displayName = 'Gemini 4 Hydrogen (Sonar)';
       else if (baseId === 'gemini-4-hydrogen' && (!displayName || displayName === baseId)) displayName = 'Gemini 4 Hydrogen';
+      else if (baseId === 'gemini-4-hydrogen-sonar' && (!displayName || displayName === baseId || displayName.includes('gemini-4-hydrogen'))) displayName = 'Gemini 4 Hydrogen (Sonar)';
       else displayName = displayName || baseId;
 
       pooledGoogleModels.push({
@@ -512,7 +511,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
         refreshToken: undefined,
         accountName: '',
         accountEmail: '',
-        _poolOnly: (baseId === 'gemini-3.8-flash-tiered' || baseId === 'claude-sonnet-4-6' || baseId === 'claude-opus-4-6-thinking') ? (true as const) : undefined,
+        _poolOnly: undefined,
         _effortSuffix: template._effortSuffix || '',
       });
     });
