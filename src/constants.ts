@@ -538,7 +538,7 @@ export const STANDARD_GOOGLE_MODELS = [
 export function isObsoleteModel(idOrName?: string, displayName?: string): boolean {
   if (!idOrName && !displayName) return false;
   const str = `${idOrName || ''} ${displayName || ''}`.toLowerCase();
-  if (str.includes('argon')) return false;
+  if (str.includes('argon') || str.includes('gpt-oss') || str.includes('gpt_oss') || str.includes('gpt oss') || str.includes('120b')) return false;
 
   // Deprecated Gemini / Google models: 1.x, 2.x, 3.0, 3.1, 3.5, 3.6, 3.7
   if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;

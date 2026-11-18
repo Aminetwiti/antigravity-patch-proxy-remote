@@ -277,14 +277,18 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
         const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
         let displayName = m.displayName ?? '';
-        if (!displayName || displayName === mId || displayName.includes('-tiered') || displayName === 'gemini-4-hydrogen-sonar') {
-          const norm = normalizeCloudCodeModelId(mId);
-          if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
-          else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
-          else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
-          else if (mId === 'gemini-4-hydrogen-sonar' || mId.toLowerCase().includes('sonar')) displayName = 'Gemini 4 Hydrogen (Sonar)';
-          else if (mId === 'gemini-4-hydrogen' || norm === 'gemini-4-hydrogen') displayName = 'Gemini 4 Hydrogen';
-          else displayName = mId;
+        if (isGoogle) {
+          if (!displayName || displayName === mId || displayName.includes('-tiered') || displayName === 'gemini-4-hydrogen-sonar' || displayName === 'gemini-4-hydrogen') {
+            const norm = normalizeCloudCodeModelId(mId);
+            if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
+            else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
+            else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
+            else if (mId === 'gemini-4-hydrogen-sonar' || mId.toLowerCase().includes('sonar')) displayName = 'Gemini 4 Hydrogen (Sonar)';
+            else if (mId === 'gemini-4-hydrogen' || norm === 'gemini-4-hydrogen') displayName = 'Gemini 4 Hydrogen';
+            else displayName = mId;
+          }
+        } else if (!displayName) {
+          displayName = mId;
         }
 
         const accProvider = (acc as any).provider || (p.provider ?? 'openai');
@@ -310,7 +314,7 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
                       : (p.apiUrl?.includes('cloudcode') && !p.apiUrl.includes('cloudcode-pa.googleapis.com') ? p.apiUrl : 'https://daily-cloudcode-pa.googleapis.com'))
                   : (accApiUrl || p.apiUrl || '')));
 
-        const isAccountExplicitlyDisabled = acc.enabled === false || m.enabled === false || p.enabled === false;
+        const isAccountExplicitlyDisabled = acc.enabled === false || (m.enabled === false && !isExplicitlyEnabledAtProvider) || p.enabled === false;
         const accountStatus = (acc as any).status || (p as any).status;
         const isValReq = Boolean(
           (acc as any).isValidationRequired ||

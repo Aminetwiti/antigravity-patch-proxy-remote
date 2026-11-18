@@ -15,6 +15,7 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-4-argon-medium',
     'gemini-4-argon-low',
     'gemini-4-argon',
+    'gemini-4-hydrogen',
     'gemini-4-hydrogen-sonar',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
@@ -27,7 +28,6 @@ export function normalizeCloudCodeModelId(modelId: string): string {
   }
 
   const map: Record<string, string> = {
-    'gemini-4-hydrogen': 'gemini-4-hydrogen-sonar',
     'gemini-4-argon': 'gemini-4-argon-high',
     'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',

@@ -48,7 +48,7 @@ describe('Obsolete and Deprecated Model Masking & Filtering', () => {
       expect(isObsoleteModel(m('gpt', '4o', 'mini'))).toBe(true);
       expect(isObsoleteModel(m('gpt', '4'))).toBe(true);
       expect(isObsoleteModel(m('gpt', '3.5', 'turbo'))).toBe(true);
-      expect(isObsoleteModel(m('gpt', 'oss', '120b', 'medium'))).toBe(true);
+      expect(isObsoleteModel(m('gpt', 'oss', '120b', 'medium'))).toBe(false);
       expect(isObsoleteModel('custom', 'GPT-4o Mini')).toBe(true);
     });
 
@@ -73,7 +73,7 @@ describe('Obsolete and Deprecated Model Masking & Filtering', () => {
         m('gemini', '3.6', 'flash', 'tiered'),
         m('gemini', '2.5', 'flash', 'thinking'),
         m('gemini', '3.1', 'flash', 'image'),
-        m('gpt', 'oss', '120b', 'medium'),
+        m('gpt', '4', 'turbo'),
         m('gemini', '3', 'flash', 'agent'),
         m('gemini', '3.5', 'flash', 'extra', 'low'),
         m('gemini', '3.1', 'pro', 'low'),
@@ -94,6 +94,7 @@ describe('Obsolete and Deprecated Model Masking & Filtering', () => {
       expect(isObsoleteModel('gemini-3.8-flash-tiered')).toBe(false);
       expect(isObsoleteModel('gemini-3.8-flash')).toBe(false);
       expect(isObsoleteModel('gemini-4-argon-medium')).toBe(false);
+      expect(isObsoleteModel('gpt-oss-120b')).toBe(false);
       expect(isObsoleteModel('claude-sonnet-4-6')).toBe(false);
       expect(isObsoleteModel('claude-opus-4-6-thinking')).toBe(false);
       expect(isObsoleteModel('deepseek-chat')).toBe(false);

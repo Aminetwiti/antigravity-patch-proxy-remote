@@ -422,7 +422,7 @@ function injectCustomModelsIntoUserStatusJson(
       const labelLower = label.toLowerCase();
       const idLower = modelId.toLowerCase();
       // Ne marquer Unavailable QUE les modèles natifs officiels de Google (pas les modèles personnalisés injectés)
-      const isCustomInjected = idLower.includes('model_placeholder_') || label.includes('🟣') || label.includes('◆') || label.includes('[Pool]');
+      const isCustomInjected = idLower.includes('model_placeholder_') || idLower.startsWith('custom-') || label.includes('🟣') || label.includes('◆') || label.includes('[Pool]');
       if (
         !isCustomInjected &&
         (labelLower.includes('carbon') || idLower.includes('carbon') ||
@@ -432,6 +432,12 @@ function injectCustomModelsIntoUserStatusJson(
         c.tagTitle = 'Unavailable';
         c.tagDescription = 'Unavailable';
         c.disabled = true;
+      } else if (isCustomInjected) {
+        delete c.disabled;
+        if (c.tagTitle === 'Unavailable') {
+          delete c.tagTitle;
+          delete c.tagDescription;
+        }
       }
       // Native models are preserved intact
       const isObsolete = false;

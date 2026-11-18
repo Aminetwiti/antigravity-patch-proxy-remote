@@ -145,16 +145,25 @@ export async function handleModelsDiscoveryRoute(
               const mDesc = String(mEntry.tagDescription || '');
               const mIdLower = mId.toLowerCase();
               const mDispLower = mDisp.toLowerCase();
+              const isCustomModel = mIdLower.startsWith('custom-') || mIdLower.includes('model_placeholder_') || mDisp.includes('🟣') || mDisp.includes('◆');
               // Preserve native Carbon, Argon, and Hydrogen as Unavailable / disabled
               if (
-                mIdLower.includes('carbon') || mDispLower.includes('carbon') ||
-                mIdLower.includes('argon') || mDispLower.includes('argon') ||
-                ((mIdLower.includes('hydrogen') || mDispLower.includes('hydrogen')) && !mIdLower.includes('sonar') && !mDispLower.includes('sonar') && !mIdLower.includes('model_placeholder_'))
+                !isCustomModel &&
+                (mIdLower.includes('carbon') || mDispLower.includes('carbon') ||
+                 mIdLower.includes('argon') || mDispLower.includes('argon') ||
+                 ((mIdLower.includes('hydrogen') || mDispLower.includes('hydrogen')) && !mIdLower.includes('sonar') && !mDispLower.includes('sonar')))
               ) {
                 mEntry.disabled = true;
                 mEntry.tagTitle = 'Unavailable';
                 mEntry.tagDescription = 'Unavailable';
                 continue;
+              }
+              if (isCustomModel) {
+                delete mEntry.disabled;
+                if (mTag.toLowerCase().includes('unavailable') || mDesc.toLowerCase().includes('unavailable')) {
+                  delete mEntry.tagTitle;
+                  delete mEntry.tagDescription;
+                }
               }
               if (
                 mTag.toLowerCase().includes('unavailable') ||
