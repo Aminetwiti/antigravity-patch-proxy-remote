@@ -143,9 +143,20 @@ export async function handleModelsDiscoveryRoute(
               const mDisp = String(mEntry.displayName || '');
               const mTag = String(mEntry.tagTitle || '');
               const mDesc = String(mEntry.tagDescription || '');
+              const mIdLower = mId.toLowerCase();
+              const mDispLower = mDisp.toLowerCase();
+              // Preserve native Carbon, Argon, and Hydrogen as Unavailable / disabled
               if (
-                mId.toLowerCase().includes('argon') ||
-                mDisp.toLowerCase().includes('argon') ||
+                mIdLower.includes('carbon') || mDispLower.includes('carbon') ||
+                mIdLower.includes('argon') || mDispLower.includes('argon') ||
+                ((mIdLower.includes('hydrogen') || mDispLower.includes('hydrogen')) && !mIdLower.includes('sonar') && !mDispLower.includes('sonar') && !mIdLower.includes('model_placeholder_'))
+              ) {
+                mEntry.disabled = true;
+                mEntry.tagTitle = 'Unavailable';
+                mEntry.tagDescription = 'Unavailable';
+                continue;
+              }
+              if (
                 mTag.toLowerCase().includes('unavailable') ||
                 mDesc.toLowerCase().includes('ultra') ||
                 mEntry.disabled === true

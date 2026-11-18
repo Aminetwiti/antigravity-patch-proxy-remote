@@ -297,7 +297,7 @@ describe('loadCustomModels', () => {
     expect(models[0].externalModelName).toBe('deepseek-chat');
   });
 
-  it('[AUDIT-001] excludes hydrogen, argon, and carbon from google auto-pool generation', () => {
+  it('[AUDIT-001] excludes argon and carbon from google auto-pool generation', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const providersFile = {
       providers: [
@@ -326,12 +326,12 @@ describe('loadCustomModels', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(providersFile));
 
     const models = loadCustomModels();
-    // Auto-pool models must NOT contain argon, hydrogen, or carbon
+    // Auto-pool models must NOT contain argon or carbon, but user-configured hydrogen is allowed
     const autoPoolNames = models.filter((m) => m.name.includes(':auto-pool')).map((m) => m.name);
     expect(autoPoolNames.some((n) => n.includes('argon'))).toBe(false);
-    expect(autoPoolNames.some((n) => n.includes('hydrogen'))).toBe(false);
     expect(autoPoolNames.some((n) => n.includes('carbon'))).toBe(false);
     expect(autoPoolNames.some((n) => n.includes('gemini-3.8-flash-tiered'))).toBe(true);
+    expect(autoPoolNames.some((n) => n.includes('hydrogen'))).toBe(true);
   });
 
   it('[AUDIT-004] respects explicit account-level models even when provider-level template has disabled flag', () => {

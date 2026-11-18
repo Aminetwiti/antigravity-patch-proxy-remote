@@ -991,15 +991,19 @@ export function handleCustomModelRequest(
         }
       } else if (model.fallbackModel) {
         chainItems.push(model.fallbackModel);
-      } else if (model.provider === 'google' && !isGoogleCloudCodeModel(model)) {
+      } else if ((model.provider === 'google' || model.provider === 'google-gemini') && !isGoogleCloudCodeModel(model)) {
         // Intelligent default fallback cascade for Google AI Studio models (e.g. 503 high demand or 429)
         const norm = (model.externalModelName || model.name || '').toLowerCase();
         if (norm.includes('gemini-3.8-flash')) {
           chainItems.push('gemini-3.8-pro');
+        } else if (norm.includes('hydrogen')) {
+          chainItems.push('gemini-3.8-flash-tiered', 'claude-sonnet-4-6');
         }
       }
 
-      const allowCrossModel = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
+      const isServerOverload = diagnostic.errorType === 'server' && (diagnostic.title?.includes('503') || diagnostic.title?.includes('Capacity'));
+      const hasExplicitChain = chainItems.length > 0;
+      const allowCrossModel = hasExplicitChain || process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
       if (allowCrossModel && (poolSiblings.length > 0 || chainItems.length > 0)) {
         const chainModels: CustomModel[] = [];
         for (const item of chainItems) {
@@ -1020,7 +1024,10 @@ export function handleCustomModelRequest(
           chainModels.push(...matches);
         }
         const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m) && !m.name?.includes(':auto-pool') && m.apiKey !== 'auto');
-        orderedModels = [...poolSiblings, ...chainModels, ...rest];
+        // When server is overloaded with 503, prioritize fallback models over same-model siblings to avoid retry storms
+        orderedModels = isServerOverload && chainModels.length > 0
+          ? [...chainModels, ...poolSiblings, ...rest]
+          : [...poolSiblings, ...chainModels, ...rest];
       } else {
         // Strict model locking: only rotate among accounts offering the exact same model!
         orderedModels = poolSiblings;
