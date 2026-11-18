@@ -436,7 +436,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
     for (const m of loadedModels) {
       if (m.provider === 'google' || isGoogleCloudCodeModel(m)) {
         const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim();
-        if (rawName) {
+        if (rawName && rawName.toLowerCase() !== 'gemini-4-hydrogen') {
           const norm = isGoogleCloudCodeModel(m)
             ? normalizeCloudCodeModelId(rawName)
             : normalizeGoogleModelId(rawName);

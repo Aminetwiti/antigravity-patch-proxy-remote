@@ -67,6 +67,7 @@ import {
   _resetAllAccountCooldowns,
 } from '../../../proxy';
 import { recordFailure, recordSuccess, getOpenBreaker } from '../../../proxy/resilience/circuit/circuitBreaker';
+import { markAccountQuotaExhausted } from '../../../proxy/resilience/google/cooldown/cooldownState';
 import {
   isTokenCached,
   prewarmGoogleAccounts,
@@ -1125,6 +1126,35 @@ describe('Google Multi-Account Pool & Failover', () => {
       });
 
       expect(isAccountInCooldown(acc, 'gemini')).toBe(false);
+    });
+
+    it('AUDIT-003: autoHealAccountOnQuotaRecovery does NOT lift Claude cooldown if quota is marked exhausted and reset has not elapsed', () => {
+      const acc: CustomModel = {
+        name: 'test-claude-flapping',
+        provider: 'google',
+        accountEmail: 'claude-flapping@example.com',
+        refreshToken: 'claude_flapping_token',
+      };
+      const key = getAccountQuotaKey(acc);
+      // Set 5-hour cooldown (18000s) and mark as quota exhausted
+      setAccountCooldown(acc, 5 * 3600_000, 'claude');
+      markAccountQuotaExhausted(key, 'claude');
+      expect(isAccountInCooldown(acc, 'claude')).toBe(true);
+
+      // Even if summary claims claudeFiveHourPct is 100%, but reset timestamp is in the future
+      autoHealAccountOnQuotaRecovery(key, {
+        geminiFiveHourPct: 100,
+        geminiWeeklyPct: 100,
+        claudeFiveHourPct: 100,
+        claudeWeeklyPct: 100,
+        claudeReset: new Date(Date.now() + 3 * 3600_000).toISOString(),
+        fiveHourPercentage: 100,
+        weeklyPercentage: 100,
+        updatedAt: Date.now(),
+      });
+
+      // Cooldown must remain active to prevent flapping 429 ping-pong
+      expect(isAccountInCooldown(acc, 'claude')).toBe(true);
     });
 
     it('autoHealAccountOnQuotaRecovery does NOT lift multi-day cooldown (>5h remaining)', () => {

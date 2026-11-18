@@ -1002,6 +1002,7 @@ export function handleCustomModelRequest(
       }
 
       const isServerOverload = diagnostic.errorType === 'server' && (diagnostic.title?.includes('503') || diagnostic.title?.includes('Capacity'));
+      const isFleetRateLimit = diagnostic.errorType === 'rate_limit' && (diagnostic.title?.includes('Edge IP') || diagnostic.title?.includes('Fleet') || diagnostic.detail?.includes('Fleet 429'));
       const hasExplicitChain = chainItems.length > 0;
       const allowCrossModel = hasExplicitChain || process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
       if (allowCrossModel && (poolSiblings.length > 0 || chainItems.length > 0)) {
@@ -1024,8 +1025,8 @@ export function handleCustomModelRequest(
           chainModels.push(...matches);
         }
         const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m) && !m.name?.includes(':auto-pool') && m.apiKey !== 'auto');
-        // When server is overloaded with 503, prioritize fallback models over same-model siblings to avoid retry storms
-        orderedModels = isServerOverload && chainModels.length > 0
+        // When server is overloaded with 503 or hit by fleet-wide IP edge 429, prioritize fallback models over same-model siblings to avoid retry storms
+        orderedModels = (isServerOverload || isFleetRateLimit) && chainModels.length > 0
           ? [...chainModels, ...poolSiblings, ...rest]
           : [...poolSiblings, ...chainModels, ...rest];
       } else {
