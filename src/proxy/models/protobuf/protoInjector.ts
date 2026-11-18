@@ -270,7 +270,7 @@ export function injectCustomModelsIntoResponse(
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
                 : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
-                    ? 'gemini-4-hydrogen'
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
                     : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
@@ -427,7 +427,7 @@ function injectCustomModelsIntoUserStatusJson(
         !isCustomInjected &&
         (labelLower.includes('carbon') || idLower.includes('carbon') ||
          labelLower.includes('argon') || idLower.includes('argon') ||
-         labelLower.includes('hydrogen') || idLower.includes('hydrogen'))
+         ((labelLower.includes('hydrogen') || idLower.includes('hydrogen')) && !labelLower.includes('sonar') && !idLower.includes('sonar')))
       ) {
         c.tagTitle = 'Unavailable';
         c.tagDescription = 'Unavailable';
@@ -504,7 +504,7 @@ function injectCustomModelsIntoUserStatusJson(
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
                 : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
-                    ? 'gemini-4-hydrogen'
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
                     : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
@@ -722,7 +722,7 @@ export function injectCustomModelsIntoUserStatus(
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
                 : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
-                    ? 'gemini-4-hydrogen'
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
                     : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 

@@ -91,10 +91,15 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
     geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiWeeklyResetPassed) ||
                            (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiWeeklyResetPassed);
 
+    const isGeminiExhaustionCleared =
+      !isGeminiQuotaExhausted ||
+      (isStrictCooldown ? geminiWeeklyResetPassed : (geminiResetPassed || remaining <= 0));
+
     const canHealGemini =
       !isRateLimited &&
       (!isStrictCooldown || geminiWeeklyResetPassed) &&
-      (!isGeminiQuotaExhausted || quota.geminiFiveHourPct >= 5 || (isStrictCooldown ? geminiWeeklyResetPassed : geminiResetPassed)) &&
+      isGeminiExhaustionCleared &&
+      quota.geminiFiveHourPct >= 5 &&
       !geminiWeeklyDepleted &&
       hasAnyCooldown;
 
@@ -187,10 +192,15 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
     claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeWeeklyResetPassed) ||
                            (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeWeeklyResetPassed);
 
+    const isClaudeExhaustionCleared =
+      !isClaudeQuotaExhausted ||
+      (isStrictCooldown ? claudeWeeklyResetPassed : (claudeResetPassed || remaining <= 0));
+
     const canHealClaude =
       !isRateLimited &&
       (!isStrictCooldown || claudeWeeklyResetPassed) &&
-      (!isClaudeQuotaExhausted || quota.claudeFiveHourPct >= 5 || (isStrictCooldown ? claudeWeeklyResetPassed : claudeResetPassed)) &&
+      isClaudeExhaustionCleared &&
+      quota.claudeFiveHourPct >= 5 &&
       !claudeWeeklyDepleted &&
       hasAnyCooldown;
 

@@ -277,11 +277,12 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
         const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
         let displayName = m.displayName ?? '';
-        if (!displayName || displayName === mId || displayName.includes('-tiered')) {
+        if (!displayName || displayName === mId || displayName.includes('-tiered') || displayName === 'gemini-4-hydrogen-sonar') {
           const norm = normalizeCloudCodeModelId(mId);
           if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
           else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
           else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
+          else if (mId === 'gemini-4-hydrogen-sonar' || mId.toLowerCase().includes('sonar')) displayName = 'Gemini 4 Hydrogen (Sonar)';
           else if (mId === 'gemini-4-hydrogen' || norm === 'gemini-4-hydrogen') displayName = 'Gemini 4 Hydrogen';
           else displayName = mId;
         }
@@ -479,7 +480,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
       if (isUnsupportedCloudCodeModel(rawLower) && isGoogleCloudCodeModel(m)) {
         continue;
       }
-      const baseId = normalizeCloudCodeModelId(raw);
+      const baseId = rawLower === 'gemini-4-hydrogen' ? 'gemini-4-hydrogen' : normalizeCloudCodeModelId(raw);
       if (isUnsupportedCloudCodeModel(baseId) && isGoogleCloudCodeModel(m)) {
         continue;
       }
@@ -496,6 +497,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
       else if (baseId === 'claude-sonnet-4-6' && (!displayName || displayName === baseId)) displayName = 'Claude Sonnet 4.6 (Thinking)';
       else if (baseId === 'claude-opus-4-6-thinking' && (!displayName || displayName === baseId)) displayName = 'Claude Opus 4.6 (Thinking)';
       else if (baseId === 'gemini-4-hydrogen' && (!displayName || displayName === baseId)) displayName = 'Gemini 4 Hydrogen';
+      else if (baseId === 'gemini-4-hydrogen-sonar' && (!displayName || displayName === baseId || displayName.includes('gemini-4-hydrogen'))) displayName = 'Gemini 4 Hydrogen (Sonar)';
       else displayName = displayName || baseId;
 
       pooledGoogleModels.push({
@@ -509,6 +511,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
         refreshToken: undefined,
         accountName: '',
         accountEmail: '',
+        _poolOnly: undefined,
         _effortSuffix: template._effortSuffix || '',
       });
     });

@@ -73,6 +73,7 @@ export async function dispatchWithHedge(
 
   let successfulCandidate = candidate;
   const claimer = createResponseClaimer();
+  let hedgeLaunched = false;
   let hedgeTimer: NodeJS.Timeout | undefined;
 
   const candidate1Promise = executeGoogleCloudCodeRequest(
@@ -100,6 +101,7 @@ export async function dispatchWithHedge(
 
   const hedgePromise = new Promise<GoogleRequestOutcome>((resolveHedge) => {
     hedgeTimer = setTimeout(async () => {
+      hedgeLaunched = true;
       if (claimer.isClaimed() || res.headersSent || res.writableEnded) {
         resolveHedge({ success: false, statusCode: 499, error: 'Hedge aborted: already claimed or response finished' });
         return;
@@ -211,9 +213,17 @@ export async function dispatchWithHedge(
     if (hedgeTimer) clearTimeout(hedgeTimer);
   } else {
     if (candidate1Settled && candidate1Result && !candidate1Result.success) {
-      log.info(`[Proxy] Candidate [${candidateName}] did not succeed (${candidate1Result.statusCode}). Awaiting speculative hedged candidate in flight...`);
-      const hedgeOutcome = await hedgePromise;
-      outcome = hedgeOutcome && hedgeOutcome.success ? hedgeOutcome : firstOutcome;
+      if (hedgeLaunched) {
+        log.info(`[Proxy] Candidate [${candidateName}] did not succeed (${candidate1Result.statusCode}). Awaiting speculative hedged candidate in flight...`);
+        const hedgeOutcome = await hedgePromise;
+        outcome = hedgeOutcome && hedgeOutcome.success ? hedgeOutcome : firstOutcome;
+      } else {
+        if (hedgeTimer) clearTimeout(hedgeTimer);
+        outcome = firstOutcome;
+      }
+    } else if (!candidate1Settled) {
+      const c1 = await candidate1Watched;
+      outcome = c1.success ? c1 : firstOutcome;
     } else {
       outcome = firstOutcome;
     }

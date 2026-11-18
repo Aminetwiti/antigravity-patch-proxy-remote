@@ -190,7 +190,7 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
           const isNativeUnavailable =
             kLower.includes('carbon') || dispLower.includes('carbon') ||
             kLower.includes('argon') || dispLower.includes('argon') ||
-            kLower.includes('hydrogen') || dispLower.includes('hydrogen') ||
+            ((kLower.includes('hydrogen') || dispLower.includes('hydrogen')) && !kLower.includes('sonar') && !dispLower.includes('sonar')) ||
             entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra') || entry.disabled === true;
 
           if (isNativeUnavailable) {

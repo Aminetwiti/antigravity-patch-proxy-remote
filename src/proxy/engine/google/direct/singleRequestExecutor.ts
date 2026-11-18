@@ -136,6 +136,14 @@ export function executeGoogleCloudCodeRequest(
           handleBufferedCloudCodeResponse(proxyRes, res, req, status, finish);
         } else if (isGeneration) {
           if (isStream) {
+            if (responseClaimer) {
+              if (!responseClaimer.claim(traceId)) {
+                try { proxyReq?.destroy(); } catch (_) {}
+                finish({ success: false, statusCode: 499, error: 'Cancelled by winning hedged request' });
+                return;
+              }
+              responseClaimer.abortOthers(traceId);
+            }
             transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession, modelName, startTime);
             finish({ success: true, statusCode: status });
           } else {

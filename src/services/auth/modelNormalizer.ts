@@ -15,7 +15,6 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-4-argon-medium',
     'gemini-4-argon-low',
     'gemini-4-argon',
-    'gemini-4-hydrogen',
     'gemini-4-hydrogen-sonar',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
@@ -28,6 +27,7 @@ export function normalizeCloudCodeModelId(modelId: string): string {
   }
 
   const map: Record<string, string> = {
+    'gemini-4-hydrogen': 'gemini-4-hydrogen-sonar',
     'gemini-4-argon': 'gemini-4-argon-high',
     'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
@@ -68,6 +68,8 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     if (clean.includes('medium')) return 'gemini-4-argon-medium';
     return 'gemini-4-argon-high';
   }
+  if (clean.includes('sonar')) return 'gemini-4-hydrogen-sonar';
+  if (clean.includes('hydrogen')) return 'gemini-4-hydrogen';
   if (clean.includes('flash') || clean.includes('pro')) return 'gemini-3.8-flash-tiered';
   if (clean.includes('gpt')) return 'gemini-3.8-flash-tiered';
 
@@ -88,7 +90,6 @@ export function normalizeGoogleModelId(modelName: string): string {
     'gemini-4-argon-medium',
     'gemini-4-argon-low',
     'gemini-4-argon',
-    'gemini-4-hydrogen',
     'gemini-4-hydrogen-sonar',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
@@ -144,6 +145,8 @@ export function normalizeGoogleModelId(modelName: string): string {
     if (clean.includes('medium')) return 'gemini-4-argon-medium';
     return 'gemini-4-argon-high';
   }
+  if (clean.includes('sonar')) return 'gemini-4-hydrogen-sonar';
+  if (clean.includes('hydrogen')) return 'gemini-4-hydrogen';
 
   if (clean.includes('pro') || clean.includes('flash') || clean.includes('gpt')) {
     return 'gemini-3.8-flash-tiered';
