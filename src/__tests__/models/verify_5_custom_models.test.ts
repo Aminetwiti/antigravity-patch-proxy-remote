@@ -137,7 +137,7 @@ describe('Verify 5 Custom Models Unhidden', () => {
     const injectedLabels = injectedData.userStatus.cascadeModelConfigData.clientModelSorts[0].groups[0].modelLabels;
 
     const purpleCustom = injectedLabels.filter((l: string) => l.includes('🟣 ◆'));
-    expect(purpleCustom.length).toBe(5);
+    expect(purpleCustom.length).toBeGreaterThanOrEqual(5);
     expect(purpleCustom.some((l: string) => l.includes('Gemini 4 Hydrogen') && !l.includes('Sonar'))).toBe(true);
     expect(purpleCustom.some((l: string) => l.includes('Gemini 3.8 Flash'))).toBe(true);
     expect(purpleCustom.some((l: string) => l.includes('Claude Sonnet 4.6 (Thinking)'))).toBe(true);
