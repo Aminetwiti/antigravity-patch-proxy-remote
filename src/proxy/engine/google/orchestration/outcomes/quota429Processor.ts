@@ -209,7 +209,7 @@ export async function processOutcome429(
   if (shouldBreakFleet && sortedAccounts.length > 1) {
     state.lastStatus = 429;
     state.lastErrorText = outcome.error || `HTTP 429 (${decision.reason} across ${state.consecutive429Count} accounts)`;
-    log.warn(`[Proxy] 🛑 429 Fleet Circuit Breaker: Model ${targetModel} hit rate limits across ${state.consecutive429Count} accounts. Stopping rotation.`);
+    log.warn(`[Proxy] 🛑 429 Fleet Circuit Breaker (Google Edge IP Throttle): Model ${targetModel} hit edge rate limits across ${state.consecutive429Count} accounts. Stopping rotation.`);
     // Enforce fleet-wide cooldown on model and family to prevent subsequent requests from repeating 429 storm
     const fleetCooldownMs = process.env.AG_FLEET_429_COOLDOWN_MS
       ? parseInt(process.env.AG_FLEET_429_COOLDOWN_MS, 10)

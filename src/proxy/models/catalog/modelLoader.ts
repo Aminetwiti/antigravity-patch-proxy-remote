@@ -243,13 +243,14 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
           updateLiveAccountQuota(accKey, (acc as any).quotas);
         }
       }
-      const targetModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : models;
+      const hasExplicitAccountModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0;
+      const targetModels = hasExplicitAccountModels ? (acc as any).models : models;
       for (const rawM of targetModels) {
         const m = typeof rawM === 'string' ? { id: rawM, displayName: '', enabled: true } : rawM;
         if (m.enabled === false && !includeDisabled) continue;
         const mId = m.id ?? '';
         const normMId = isGoogle ? normalizeCloudCodeModelId(mId) : '';
-        if ((disabledProviderModelIds.has(mId) || (normMId && disabledProviderModelIds.has(normMId))) && !includeDisabled) continue;
+        if (!hasExplicitAccountModels && (disabledProviderModelIds.has(mId) || (normMId && disabledProviderModelIds.has(normMId))) && !includeDisabled) continue;
         if (isObsoleteModel(mId, m.displayName)) continue;
         if (isGeminiCli && (mId.includes('gemini-2') || mId.includes('gemini-3.1') || mId.includes('gemini-3.0') || mId.includes('gemini-1'))) {
           continue;
@@ -445,17 +446,22 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
     const googleFamilyModels = loadedModels.filter(isGoogleFamily);
     const otherModels = loadedModels.filter(m => !isGoogleFamily(m));
 
+    const isUnsupportedCloudCodeModel = (name: string) => {
+      const lower = (name || '').toLowerCase();
+      return lower.includes('argon') || lower.includes('hydrogen') || lower.includes('carbon');
+    };
+
     const seenBaseIds = new Map<string, CustomModel>();
     for (const m of googleFamilyModels) {
       const raw = (m.externalModelName || m.name || '').replace(/^models\//, '');
       const rawLower = raw.toLowerCase();
-      // Argon is purely a native Antigravity model and does not exist on Google Cloud Code OAuth API (returns 404).
-      // Skip auto-pool generation so Argon is always handled transparently by native Antigravity.
-      if (rawLower.includes('argon') && isGoogleCloudCodeModel(m)) {
+      // Argon, Hydrogen and Carbon are internal/native models not supported on Google Cloud Code OAuth API (returns 404/400).
+      // Skip auto-pool generation so they are not injected as broken pools.
+      if (isUnsupportedCloudCodeModel(rawLower) && isGoogleCloudCodeModel(m)) {
         continue;
       }
       const baseId = normalizeCloudCodeModelId(raw);
-      if (baseId.toLowerCase().includes('argon') && isGoogleCloudCodeModel(m)) {
+      if (isUnsupportedCloudCodeModel(baseId) && isGoogleCloudCodeModel(m)) {
         continue;
       }
       if (!seenBaseIds.has(baseId)) {
@@ -489,9 +495,9 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
     });
 
     // Mark ALL real per-account entries (both Cloud Code and AI Studio) as dispatch-only (hidden from dropdown)
-    // Exclude Argon from Cloud Code OAuth dispatch pool since Cloud Code OAuth returns 404 for Argon.
+    // Exclude Argon, Hydrogen and Carbon from Cloud Code OAuth dispatch pool since Cloud Code OAuth returns 404 for them.
     const realGoogleModels = googleFamilyModels
-      .filter((m) => !(m.externalModelName || m.name || '').toLowerCase().includes('argon') || !isGoogleCloudCodeModel(m))
+      .filter((m) => !isUnsupportedCloudCodeModel(m.externalModelName || m.name || '') || !isGoogleCloudCodeModel(m))
       .map((m) => ({ ...m, _poolOnly: true as const }));
 
     const result = [...pooledGoogleModels, ...realGoogleModels, ...otherModels];

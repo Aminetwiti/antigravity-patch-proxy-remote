@@ -1,4 +1,4 @@
-﻿import log from 'electron-log';
+import log from 'electron-log';
 import type { CustomModel, GeminiRequestBody } from '../../../../core/types';
 import type { FallbackParams } from './types';
 import { isGoogleCloudCodeModel } from '../../../../../services/auth/googleAuth';

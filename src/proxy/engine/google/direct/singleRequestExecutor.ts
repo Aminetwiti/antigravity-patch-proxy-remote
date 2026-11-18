@@ -105,11 +105,6 @@ export function executeGoogleCloudCodeRequest(
       };
 
       proxyReq = https.request(parsedUrl, options, (proxyRes) => {
-        if (responseClaimer) {
-          responseClaimer.registerAbort(traceId, () => {
-            try { proxyReq?.destroy(); } catch (_) {}
-          });
-        }
         proxyReq?.setTimeout(0);
 
         const status = proxyRes.statusCode || 200;
@@ -206,6 +201,12 @@ export function executeGoogleCloudCodeRequest(
         const ms = endTimer();
         metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
       });
+
+      if (responseClaimer) {
+        responseClaimer.registerAbort(traceId, () => {
+          try { proxyReq?.destroy(); } catch (_) {}
+        });
+      }
 
       let effectiveTimeout: number;
       if (typeof timeoutMs === 'number' && timeoutMs > 0) {

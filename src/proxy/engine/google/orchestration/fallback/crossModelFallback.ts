@@ -87,7 +87,17 @@ export async function attemptCrossModelFallback(
 
     if (fallbackCandidates.length === 0) continue;
 
-    log.warn(`[Proxy] 🔀 [Model Fallback] Pool exhausted for [${currentBase}]. Switching to fallback: [${fallbackModel}]...`);
+    const reasonText =
+      lastStatus === 429
+        ? `Pool quota exhausted`
+        : lastStatus === 404
+        ? `Model not found upstream (HTTP 404)`
+        : lastStatus === 400
+        ? `Model rejected upstream (HTTP 400)`
+        : lastStatus === 503
+        ? `Upstream capacity overloaded (HTTP 503)`
+        : `Upstream failure (HTTP ${lastStatus || 500})`;
+    log.warn(`[Proxy] 🔀 [Model Fallback] ${reasonText} for [${currentBase}]. Switching to fallback: [${fallbackModel}]...`);
     const selectedFallback = selectBestModelByQuota(fallbackCandidates, allCustomModels, fbFamily) || fallbackCandidates[0];
     const fallbackPool = getGoogleAccountPool(selectedFallback, allCustomModels);
 

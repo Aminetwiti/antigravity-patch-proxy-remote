@@ -105,7 +105,8 @@ export function parseGrpcWebHeader(buf: Buffer): { flags: number; msgLen: number
 export function formatModelDisplayName(m: CustomModel, health?: ModelHealthResult | null): string {
   const isFav = isRecentModel(m.name) || isRecentModel(m.displayName);
   const star = isFav ? '⭐ ' : '';
-  let name = (m.displayName || m.name).replace(/^\[[^\]]+\]\s*/, '').trim();
+  let name = m.displayName || m.name;
+  if (!name.startsWith('[Pool]')) name = name.replace(/^\[[^\]]+\]\s*/, '');
   
   if (!health || health.status === 'healthy' || health.status === 'slow') {
     return `${star}🟣 ◆ ${name}`;
