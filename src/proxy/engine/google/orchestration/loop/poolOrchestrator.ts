@@ -135,7 +135,9 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     const targetModel = candidate.externalModelName || candidate.name;
-    const currentFamily = targetModel.toLowerCase().includes('claude') ? 'claude' : (targetModel ? 'gemini' : modelFamily);
+    const currentFamily = targetModel.toLowerCase().includes('claude')
+      ? 'claude'
+      : (targetModel.toLowerCase().includes('sonar') ? 'sonar' : (targetModel ? 'gemini' : modelFamily));
     state.networkAttemptCount++;
 
     let accessToken: string | null = null;
@@ -231,7 +233,11 @@ export async function executeGoogleCloudCodeWithPool(
       if (res429.breakLoop) break;
       if (res429.continueNext) {
         // Anti-burst jitter to prevent triggering Google Edge velocity/scraping heuristics (Issue #408)
-        await new Promise((r) => setTimeout(r, Math.floor(150 + Math.random() * 200)));
+        const backoffMs =
+          state.consecutive429Count > 1 || state.consecutiveQuotaExhausted > 1
+            ? Math.floor(400 + Math.random() * 300)
+            : Math.floor(200 + Math.random() * 200);
+        await new Promise((r) => setTimeout(r, backoffMs));
         continue;
       }
     }

@@ -66,11 +66,12 @@ export async function processOutcome403(
     if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
   } else {
     // Model-specific licensing / tier permission 403 (e.g. Sonar or Claude on free tier):
-    // Only quarantine the specific model family so remaining models (e.g. Gemini 3.8 Flash) remain fully available!
+    // Only quarantine the specific model family for 1 hour (avoiding 168h overkill) so remaining models remain fully available!
     const targetFamily = modelFamily || 'gemini';
+    const modelQuarantineMs = 60 * 60 * 1000; // 1 hour
     log.warn(
-      `[Proxy] Account ${candidateName} received HTTP 403 for model family [${targetFamily}]. Quarantining only [${targetFamily}] for ${Math.round(quarantineMs / 3600000)}h.`,
+      `[Proxy] Account ${candidateName} received HTTP 403 for model family [${targetFamily}]. Quarantining only [${targetFamily}] for ${Math.round(modelQuarantineMs / 3600000)}h.`,
     );
-    setAccountCooldown(candidate, quarantineMs, targetFamily);
+    setAccountCooldown(candidate, modelQuarantineMs, targetFamily);
   }
 }

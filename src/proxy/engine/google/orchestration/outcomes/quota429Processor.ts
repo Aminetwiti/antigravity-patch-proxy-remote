@@ -168,18 +168,26 @@ export async function processOutcome429(
     }
     updateLiveAccountQuota(liveKey, updatedQ as AccountLiveQuota);
 
-    if (targetEmail && (isWeekly || cooldownDuration >= 3600_000)) {
+    const isUpstreamCapacitySpike = state.consecutiveQuotaExhausted >= 2 && !isWeekly && !isExplicitMultiHourReset;
+    if (targetEmail && (isWeekly || cooldownDuration >= 3600_000) && !isUpstreamCapacitySpike) {
       persistAccountQuotaExhaustedToDisk(targetEmail, resetIso, modelFamily);
     }
 
     const remainingHealthyWithQuota = sortedAccounts.slice(candidateIndex + 1).some(
       (c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 20,
     );
-    const fastFailThreshold = Math.max(3, Math.ceil(sortedAccounts.length * 0.4));
-    if (state.consecutiveQuotaExhausted >= fastFailThreshold && !remainingHealthyWithQuota && sortedAccounts.length > 3) {
+    const quotaExhaustedCap = Math.min(3, Math.max(2, Math.ceil(sortedAccounts.length * 0.25)));
+    const shouldFastFailQuota =
+      (state.consecutiveQuotaExhausted >= quotaExhaustedCap && sortedAccounts.length > 1) ||
+      (!remainingHealthyWithQuota && sortedAccounts.length > 1);
+
+    if (shouldFastFailQuota) {
       state.lastStatus = 429;
       state.lastErrorText = outcome.error || `HTTP 429 (${decision.reason})`;
-      log.warn(`[Proxy] Model ${targetModel} hit quota exhaustion across ${state.consecutiveQuotaExhausted} consecutive accounts. Fast-failing pool.`);
+      log.warn(
+        `[Proxy] Model ${targetModel} hit quota exhaustion across ${state.consecutiveQuotaExhausted} consecutive accounts. Fast-failing pool to protect remaining accounts.`,
+      );
+      setFleetModelCooldown(targetModel, 30_000, `Upstream quota exhaustion across ${state.consecutiveQuotaExhausted} accounts`);
       return { breakLoop: true, continueNext: false };
     }
   } else {
