@@ -5,6 +5,7 @@ import {
   setAccountCooldown,
   markAccountUnlicensed,
 } from '../../../../resilience/pools/googlePool';
+import { markAccountQuarantined } from '../../../../resilience/google/cooldown/cooldownState';
 import {
   isGoogleCloudCodeModel,
   getValidGoogleAccessToken,
@@ -60,10 +61,12 @@ export async function processOutcome403(
       `[Proxy] Account ${candidateName} received HTTP 403 (account-level restriction). Placing in ${Math.round(quarantineMs / 3600000)}h quarantine.`,
     );
     if (isLicenseError) markAccountUnlicensed(candidate);
-    setAccountCooldown(candidate, quarantineMs);
-    setAccountCooldown(candidate, quarantineMs, 'gemini');
-    setAccountCooldown(candidate, quarantineMs, 'claude');
-    if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily);
+    setAccountCooldown(candidate, quarantineMs, undefined, false, true);
+    setAccountCooldown(candidate, quarantineMs, 'gemini', false, true);
+    setAccountCooldown(candidate, quarantineMs, 'claude', false, true);
+    if (modelFamily) setAccountCooldown(candidate, quarantineMs, modelFamily, false, true);
+    markAccountQuarantined(candidateName);
+    if (candidate.accountEmail) markAccountQuarantined(candidate.accountEmail);
   } else {
     // Model-specific licensing / tier permission 403 (e.g. Sonar or Claude on free tier):
     // Only quarantine the specific model family for 1 hour (avoiding 168h overkill) so remaining models remain fully available!
@@ -72,6 +75,8 @@ export async function processOutcome403(
     log.warn(
       `[Proxy] Account ${candidateName} received HTTP 403 for model family [${targetFamily}]. Quarantining only [${targetFamily}] for ${Math.round(modelQuarantineMs / 3600000)}h.`,
     );
-    setAccountCooldown(candidate, modelQuarantineMs, targetFamily);
+    setAccountCooldown(candidate, modelQuarantineMs, targetFamily, false, true);
+    markAccountQuarantined(candidateName, targetFamily);
+    if (candidate.accountEmail) markAccountQuarantined(candidate.accountEmail, targetFamily);
   }
 }

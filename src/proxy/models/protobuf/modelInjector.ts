@@ -92,6 +92,10 @@ export function getMappedCustomModels() {
       requestedModel: pid,
       apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
       modelProvider: 'MODEL_PROVIDER_GOOGLE',
+      quotaInfo: {
+        remainingFraction: 1,
+        resetTime: '2099-01-01T00:00:00Z',
+      },
     };
   });
   return mappedCustom;
@@ -225,6 +229,10 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         requestedModel: pid,
         apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
         modelProvider: 'MODEL_PROVIDER_GOOGLE',
+        quotaInfo: {
+          remainingFraction: 1,
+          resetTime: '2099-01-01T00:00:00Z',
+        },
       };
       if (cap.supportsImages) {
         entry.supportsVideo = false;
@@ -305,6 +313,10 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
             requestedModel: pid,
             apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
             modelProvider: 'MODEL_PROVIDER_GOOGLE',
+            quotaInfo: {
+              remainingFraction: 1,
+              resetTime: '2099-01-01T00:00:00Z',
+            },
           };
           (result as Record<string, unknown>)[pid] = entry;
           (result as Record<string, unknown>)[`models/${pid}`] = entry;

@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 
-const BROWSER_WS = 'ws://localhost:9222/devtools/browser/cf4755f4-c3ac-4b29-91fa-10dc3cc6d88e';
+const BROWSER_WS = process.env.BROWSER_WS || 'ws://localhost:9222/devtools/browser';
 const ws = new WebSocket(BROWSER_WS);
 
 let id = 0;
@@ -55,7 +55,7 @@ async function main() {
 
   // Capture screenshot of model popover
   const shot = await send('Page.captureScreenshot', { format: 'png' }, mainSession);
-  const shotPath = path.join('C:\\Users\\developer\\.gemini\\antigravity-ide\\brain\\3e9f6861-dc8a-41e3-8873-7855a12314e0\\screenshots', '04_model_picker_open.png');
+  const shotPath = path.join(process.env.SCREENSHOT_DIR || path.join(__dirname, '..', 'screenshots'), '04_model_picker_open.png');
   fs.writeFileSync(shotPath, Buffer.from(shot.data, 'base64'));
   console.log('Saved model picker screenshot:', shotPath);
 

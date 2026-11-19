@@ -223,7 +223,8 @@ export async function processOutcome429(
       ? parseInt(process.env.AG_FLEET_429_COOLDOWN_MS, 10)
       : 30_000;
     setFleetModelCooldown(targetModel, fleetCooldownMs, `Fleet 429 burst across ${state.consecutive429Count} accounts`);
-    if (modelFamily) {
+    // Only cooldown the specific model family if it is NOT the generic 'gemini' (which would inadvertently freeze Flash when Hydrogen throttles)
+    if (modelFamily && modelFamily !== 'gemini') {
       setFleetModelCooldown(modelFamily, Math.min(25_000, fleetCooldownMs), `Fleet 429 burst across ${state.consecutive429Count} accounts`);
     }
     return { breakLoop: true, continueNext: false };

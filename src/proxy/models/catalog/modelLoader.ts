@@ -296,9 +296,10 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
         const accApiUrl = (acc as any).apiUrl as string | undefined;
         const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ')) && !acc.refreshToken);
 
-        // Google AI Studio does not support Claude models
+        // Google AI Studio does not support Claude models nor Cloud Code internal codenames (hydrogen, sonar)
         const isClaude = mId.includes('claude') || displayName.toLowerCase().includes('claude');
-        if (isAiStudio && isClaude) {
+        const isCloudCodeExclusive = mId.includes('hydrogen') || mId.includes('sonar');
+        if (isAiStudio && (isClaude || isCloudCodeExclusive)) {
           continue;
         }
 

@@ -422,7 +422,18 @@ function injectCustomModelsIntoUserStatusJson(
       const labelLower = label.toLowerCase();
       const idLower = modelId.toLowerCase();
       // Ne marquer Unavailable QUE les modèles natifs officiels de Google (pas les modèles personnalisés injectés)
-      const isCustomInjected = idLower.includes('model_placeholder_') || idLower.startsWith('custom-') || label.includes('🟣') || label.includes('◆') || label.includes('[Pool]');
+      const isCustomInjected =
+        idLower.includes('model_placeholder_') ||
+        idLower.startsWith('custom-') ||
+        label.includes('🟣') ||
+        label.includes('◆') ||
+        label.includes('[Pool]') ||
+        (customModels || []).some(
+          (cm) =>
+            (cm.name && idLower === cm.name.toLowerCase()) ||
+            (cm.displayName && labelLower === cm.displayName.toLowerCase()) ||
+            (cm.externalModelName && idLower === cm.externalModelName.toLowerCase().replace(/^models\//, ''))
+        );
       if (
         !isCustomInjected &&
         (labelLower.includes('carbon') || idLower.includes('carbon') ||
@@ -434,9 +445,10 @@ function injectCustomModelsIntoUserStatusJson(
         c.disabled = true;
       } else if (isCustomInjected) {
         delete c.disabled;
-        if (c.tagTitle === 'Unavailable') {
-          delete c.tagTitle;
-          delete c.tagDescription;
+        delete c.tagTitle;
+        delete c.tagDescription;
+        if (!c.quotaInfo) {
+          c.quotaInfo = { remainingFraction: 1, resetTime: '2099-01-01T00:00:00Z' };
         }
       }
       // Native models are preserved intact

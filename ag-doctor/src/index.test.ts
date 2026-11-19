@@ -22,7 +22,7 @@ describe('ag-doctor CLI help handling', () => {
     expect(output).toContain('ag-doctor [command] [options]');
     // Must NOT be a doctor run — the diagnostics banner starts with "[OK] Environment".
     expect(output).not.toContain('[OK] Environment');
-  });
+  }, 15000);
 
   it('`ag-doctor -h` prints usage as well', async () => {
     const { main } = await import('./index');

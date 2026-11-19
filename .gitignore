@@ -44,6 +44,7 @@ Thumbs.db
 *.tmp
 *.temp
 .idea/
+.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -80,6 +81,11 @@ _archive/
 *.7z
 
 # Account tokens, credentials & runtime state (NEVER COMMIT)
+.gemini/
+custom_models.json
+!custom_models.example.json
+.env
+.env.*
 !.env.example
 !.env.schema.json
 accounts.env

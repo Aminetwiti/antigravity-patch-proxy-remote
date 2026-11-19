@@ -1,8 +1,8 @@
 {
   "name": "antigravity-patch-proxy",
   "productName": "Antigravity Patch Proxy",
-  "version": "3.9.0",
-  "description": "Antigravity Patch Proxy \u2014 Multi-Provider AI Model Proxy for Google Antigravity",
+  "version": "3.9.1",
+  "description": "Antigravity Patch Proxy — Multi-Provider AI Model Proxy for Google Antigravity",
   "homepage": "https://antigravity.google",
   "author": {
     "name": "Amine Twiti"
@@ -14,7 +14,7 @@
   ],
   "main": "dist/main.js",
   "scripts": {
-    "build": "node init && tsc && node -e \"const fs=require('fs'); fs.mkdirSync('dist/config', {recursive:true}); fs.copyFileSync('src/config/providers.json', 'dist/config/providers.json'); fs.copyFileSync('src/ui/rendererHook.js', 'dist/rendererHook.js'); if (fs.existsSync('src/ui/chatUiEnhancer.js')) fs.copyFileSync('src/ui/chatUiEnhancer.js', 'dist/chatUiEnhancer.js'); if (fs.existsSync('dist/ipc/customIpcBridge.js')) fs.copyFileSync('dist/ipc/customIpcBridge.js', 'dist/customIpcBridge.js'); fs.writeFileSync('dist/customIpcHandlers.js', \\\"module.exports = require('./ipc/index');\\\\n\\\", 'utf8');\" && node scripts/build-shims.js",
+    "build": "tsc && node -e \"const fs=require('fs'); fs.mkdirSync('dist/config', {recursive:true}); fs.copyFileSync('src/config/providers.json', 'dist/config/providers.json'); fs.copyFileSync('src/ui/rendererHook.js', 'dist/rendererHook.js'); if (fs.existsSync('src/ui/chatUiEnhancer.js')) fs.copyFileSync('src/ui/chatUiEnhancer.js', 'dist/chatUiEnhancer.js'); if (fs.existsSync('dist/ipc/customIpcBridge.js')) fs.copyFileSync('dist/ipc/customIpcBridge.js', 'dist/customIpcBridge.js'); fs.writeFileSync('dist/customIpcHandlers.js', \\\"module.exports = require('./ipc/index');\\\\n\\\", 'utf8');\" && node scripts/build-shims.js",
     "watch": "tsc --watch",
     "lint": "tsc --noEmit",
     "test": "npm run build && vitest run",
@@ -55,7 +55,7 @@
     "mitm:start": "powershell -ExecutionPolicy Bypass -File scripts/mitm/start_mitm_443.ps1",
     "mitm:restart": "cmd /c scripts\\\\mitm\\\\restart-mitm.bat",
     "repatch": "npm run build && cmd /c repatch.bat",
-    "start:mitm": "node init && cmd /c \"Start Antigravity MITM.bat\"",
+    "start:mitm": "cmd /c \"Start Antigravity MITM.bat\"",
     "security:check": "gitleaks protect --staged --config=.gitleaks.toml --redact --no-banner",
     "security:scan": "gitleaks detect --config=.gitleaks.toml --redact --no-banner --report-format json --report-path gitleaks-report.json && echo No secrets found in history",
     "security:audit": "gitleaks detect --config=.gitleaks.toml --redact --no-banner"

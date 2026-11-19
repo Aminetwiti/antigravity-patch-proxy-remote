@@ -517,21 +517,34 @@ export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
   if (consecutiveCount >= 3 || sameFileCount >= 4) {
     const lastTurn = contents[contents.length - 1] as { role?: string; parts?: unknown[] };
     if (Array.isArray(lastTurn?.parts) && lastTurn.parts.length > 0) {
+      const isSevereLoop = consecutiveCount >= 4 || sameFileCount >= 5;
       const detail = sameFileCount >= 4
         ? `Redundant tool execution detected for '${first.name}'. File '${first.filePath}' has already been inspected multiple times`
         : `Redundant tool execution detected for '${first.name}'. Output is already present in context above`;
-      const antiLoopNote = `\n[System Guardrail: ${detail}. Synthesize findings and proceed to the next step immediately.]`;
+
+      const antiLoopNote = isSevereLoop
+        ? `[System Guardrail: Redundant repeated inspection suppressed (${sameFileCount >= 5 ? `file '${first.filePath}' inspected ${sameFileCount}x` : `${consecutiveCount} consecutive identical calls`}). All required information is already present in context above. Do NOT re-execute this tool. Synthesize findings and complete the turn immediately.]`
+        : `\n[System Guardrail: ${detail}. Synthesize findings and proceed to the next step immediately.]`;
+
       const lastPart = lastTurn.parts[lastTurn.parts.length - 1] as Record<string, unknown>;
       const fr = (lastPart.functionResponse || lastPart.function_response) as Record<string, unknown> | undefined;
       if (fr && typeof fr === 'object') {
         const resp = fr.response as Record<string, any> | undefined;
         if (resp && typeof resp === 'object' && typeof resp.output === 'string') {
+          if (isSevereLoop && resp.output.length > 300) {
+            resp.output = antiLoopNote;
+            return true;
+          }
           if (!resp.output.includes('[System Guardrail')) {
             resp.output += antiLoopNote;
             return true;
           }
         }
       } else if (typeof lastPart.text === 'string') {
+        if (isSevereLoop && lastPart.text.length > 300) {
+          lastPart.text = antiLoopNote;
+          return true;
+        }
         if (!lastPart.text.includes('[System Guardrail')) {
           lastPart.text += antiLoopNote;
           return true;

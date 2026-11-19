@@ -91,6 +91,8 @@ paths = [
   '''ARCHITECTURE\.md$''',
   '''TROUBLESHOOTING\.md$''',
   '''DESIGN\.md$''',
+  '''PROTOCOL\.md$''',
+  '''ULTRA_V7_ENTERPRISE_PRODUCTION_READINESS\.md$''',
   # Temp/scratch files that should not be committed anyway
   '''temp_ui_main\.js$''',
   '''certs/''',

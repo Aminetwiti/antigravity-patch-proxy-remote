@@ -3,7 +3,11 @@ import log from 'electron-log';
 import type { CustomModel } from '../../../core/types';
 import type { AccountLiveQuota } from '../../../../services/auth/googleAuth';
 import { getOpenBreaker } from '../../circuit/circuitBreaker';
-import { triggerQuotaCachePersist, registerAccountCooldownHandlers } from '../../../../services/storage/quotaCacheStore';
+import {
+  triggerQuotaCachePersist,
+  registerAccountCooldownHandlers,
+  registerQuarantinedAccountsHandlers,
+} from '../../../../services/storage/quotaCacheStore';
 import { getAccountQuotaKey } from '../identity/accountKeys';
 import { isAccountUnlicensed } from '../identity/licensing';
 import { clearAccountQuotaExhaustedFromDisk, clearAllAccountQuotaExhaustedFromDisk } from '../identity/diskPersistence';
@@ -13,6 +17,9 @@ import {
   quotaExhaustedAccountKeys,
   rateLimitedCooldownKeys,
   fleetModelCooldowns,
+  quarantinedAccountKeys,
+  markAccountQuarantined,
+  isAccountQuarantined,
 } from './cooldownState';
 import { getModelQuotaScore } from '../selection/scoring';
 import { accountRecentBurstCount } from '../concurrency/rateLimiter';
@@ -33,13 +40,17 @@ export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string
   if (until && Date.now() >= until) {
     googleAccountCooldowns.delete(key);
     quotaExhaustedAccountKeys.delete(key);
+    quarantinedAccountKeys.delete(key);
     if (modelFamily) {
       googleAccountCooldowns.delete(`${normKey}:${modelFamily}`);
       googleAccountCooldowns.delete(`${rawKey}:${modelFamily}`);
       quotaExhaustedAccountKeys.delete(`${normKey}:${modelFamily}`);
       quotaExhaustedAccountKeys.delete(`${rawKey}:${modelFamily}`);
+      quarantinedAccountKeys.delete(`${normKey}:${modelFamily}`);
+      quarantinedAccountKeys.delete(`${rawKey}:${modelFamily}`);
       googleAccountCooldowns.delete(baseKey);
       quotaExhaustedAccountKeys.delete(baseKey);
+      quarantinedAccountKeys.delete(baseKey);
     }
     rateLimitedCooldownKeys.delete(key);
     if (modelFamily) {
@@ -60,10 +71,17 @@ export function isAccountInCooldown(candidate: CustomModel, modelFamily?: string
     (modelFamily ? (quotaExhaustedAccountKeys.has(`${normKey}:${modelFamily}`) || quotaExhaustedAccountKeys.has(`${rawKey}:${modelFamily}`)) : false);
 
   if (isExhausted) return true;
+  if (isAccountQuarantined(baseKey, modelFamily)) return true;
   return Boolean(until);
 }
 
-export function setAccountCooldown(candidate: CustomModel, durationMs = 10 * 60_000, modelFamily?: string, isRateLimit = false): void {
+export function setAccountCooldown(
+  candidate: CustomModel,
+  durationMs = 10 * 60_000,
+  modelFamily?: string,
+  isRateLimit = false,
+  isQuarantine = false,
+): void {
   if (
     (candidate as any).isValidationRequired === true ||
     (candidate as any).status === 'validation_required' ||
@@ -80,6 +98,11 @@ export function setAccountCooldown(candidate: CustomModel, durationMs = 10 * 60_
     rateLimitedCooldownKeys.add(key);
   } else {
     rateLimitedCooldownKeys.delete(key);
+  }
+  if (isQuarantine) {
+    markAccountQuarantined(baseKey, modelFamily);
+  } else {
+    quarantinedAccountKeys.delete(key);
   }
   triggerQuotaCachePersist();
 }
@@ -105,13 +128,26 @@ export function clearAccountCooldown(candidate: CustomModel, modelFamily?: strin
       accountProbationUntil.delete(`${k}:${modelFamily}`);
       quotaExhaustedAccountKeys.delete(`${k}:${modelFamily}`);
       rateLimitedCooldownKeys.delete(`${k}:${modelFamily}`);
+      quarantinedAccountKeys.delete(`${k}:${modelFamily}`);
     }
-  }
-  for (const k of keysToClear) {
-    googleAccountCooldowns.delete(k);
-    accountProbationUntil.delete(k);
-    quotaExhaustedAccountKeys.delete(k);
-    rateLimitedCooldownKeys.delete(k);
+  } else {
+    for (const k of keysToClear) {
+      googleAccountCooldowns.delete(k);
+      accountProbationUntil.delete(k);
+      quotaExhaustedAccountKeys.delete(k);
+      rateLimitedCooldownKeys.delete(k);
+      quarantinedAccountKeys.delete(k);
+      googleAccountCooldowns.delete(`${k}:gemini`);
+      googleAccountCooldowns.delete(`${k}:claude`);
+      accountProbationUntil.delete(`${k}:gemini`);
+      accountProbationUntil.delete(`${k}:claude`);
+      quotaExhaustedAccountKeys.delete(`${k}:gemini`);
+      quotaExhaustedAccountKeys.delete(`${k}:claude`);
+      rateLimitedCooldownKeys.delete(`${k}:gemini`);
+      rateLimitedCooldownKeys.delete(`${k}:claude`);
+      quarantinedAccountKeys.delete(`${k}:gemini`);
+      quarantinedAccountKeys.delete(`${k}:claude`);
+    }
   }
   if (candidate.accountEmail) {
     clearAccountQuotaExhaustedFromDisk(candidate.accountEmail);
@@ -131,6 +167,7 @@ export function clearAllAccountCooldowns(): number {
   accountProbationUntil.clear();
   quotaExhaustedAccountKeys.clear();
   rateLimitedCooldownKeys.clear();
+  quarantinedAccountKeys.clear();
   clearAllAccountQuotaExhaustedFromDisk();
   triggerQuotaCachePersist();
   return totalCleared;
@@ -200,8 +237,16 @@ export function restoreActiveAccountCooldowns(cooldowns: Record<string, number>,
   }
 }
 
-// Wire persistence handlers for cooldowns into quotaCacheStore
+// Wire persistence handlers for cooldowns and quarantines into quotaCacheStore
 registerAccountCooldownHandlers(getActiveAccountCooldowns, restoreActiveAccountCooldowns);
+registerQuarantinedAccountsHandlers(
+  () => Array.from(quarantinedAccountKeys),
+  (keys: string[]) => {
+    for (const k of keys) {
+      if (typeof k === 'string' && k.trim()) quarantinedAccountKeys.add(k.trim());
+    }
+  },
+);
 
 export function getSoonestAccountCooldownRemaining(
   candidates: CustomModel[],
@@ -275,6 +320,7 @@ export function _resetAllAccountCooldowns(): void {
   accountProbationUntil.clear();
   quotaExhaustedAccountKeys.clear();
   rateLimitedCooldownKeys.clear();
+  quarantinedAccountKeys.clear();
   accountRecentBurstCount.clear();
   fleetModelCooldowns.clear();
 }

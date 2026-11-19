@@ -103,7 +103,7 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
           : 65_000
         : 55_000
       : (hasOtherCandidates && healthySiblingAccountsCount >= 1
-          ? Math.min(65_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)
+          ? Math.min(healthySiblingAccountsCount >= 2 ? 45_000 : 60_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)
           : 70_000),
     GOOGLE_PROXY_TIMEOUT_MS,
   );
@@ -119,7 +119,7 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
       ? isLargePayloadOrThinking
         ? largeTimeoutMs
         : flashTimeoutMs
-      : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS)
+      : Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS)
     : isLargePayloadOrThinking
     ? largeTimeoutMs
     : standardTimeoutMs;
@@ -128,9 +128,9 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
     ? baseCandidateTimeout
     : isFlashModel
     ? isLargePayloadOrThinking
-      ? 60_000
+      ? 35_000
       : flashTimeoutMs
-    : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS);
+    : Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS);
 
   if (consecutive504TimeoutCount > 0) {
     const flashEscalation =

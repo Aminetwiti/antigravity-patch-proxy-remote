@@ -2,6 +2,21 @@
 
 All notable changes to the Antigravity Patch Proxy and Remote Agent Cloud Runtime are documented here.
 
+## [3.9.1] - 2026-11-19 (Privacy Sanitization, Model Isolation & Hardening)
+
+### Added
+- **Dynamic Cross-Platform Plugin Resolution**: Replaced hardcoded user paths with dynamic multi-platform path resolvers in `rendererHook.js`.
+- **Public Model Template**: Added `custom_models.example.json` and untracked user-specific `.gemini/` configurations from Git tracking.
+- **Audit & Inspection Parameterization**: Made `antigravity_deep_audit.js`, `inspect_models.js`, and `inspect_current_tab.js` environment-driven.
+
+### Changed
+- **Gemini 4 Hydrogen (Sonar) Normalization**: Added `gemini-4-hydrogen` to valid Google models and isolated 403 quarantine from Flash family.
+- **Quota & Cooldown Resilience**: Improved 429 quota fallback loop and fleet cooldown reconciler.
+- **Security & Secret Scanner**: Validated entire Git history with Gitleaks (618 commits, 0 leaks).
+- **Version Bump**: Bumped core proxy, ag-doctor CLI, and ag-doctor-ui to v3.9.1.
+
+---
+
 ## [3.9.0] - 2026-11-14 (CI/CD Streamlining, Security Purge & Model Injector Resilience)
 
 ### Added

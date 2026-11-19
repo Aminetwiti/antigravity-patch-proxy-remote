@@ -11,6 +11,7 @@ import {
   getSessionEffortAffinity,
   getSessionModelFallback,
   setSessionModelFallback,
+  clearSessionModelFallback,
 } from '../../../../resilience/pools/sessionAffinities';
 import { matchesCustomModel, clampSubagentReasoning } from '../../../../models/catalog/modelUtils';
 import { normalizeConversationTurns } from '../../../../../services/auth/googleAuth';
@@ -139,8 +140,7 @@ export async function handleCloudCodeGenerationRoute(
         rType === 'CONVERSATION_SUMMARY' ||
         rType === 'SEARCH' ||
         rType === 'INDEX' ||
-        rType === 'CORTEX' ||
-        rType === 'SONAR'
+        rType === 'CORTEX'
       ) {
         isAuxiliaryReq = true;
         auxiliaryType = rType;
@@ -196,19 +196,7 @@ export async function handleCloudCodeGenerationRoute(
             log.info(`[Proxy] Using persistent session fallback model: [${fallbackEntry.fallbackModel}] for session [${sessionKey}]`);
             candidateNames.unshift(fallbackEntry.fallbackModel);
           } else if (isExplicitCustom) {
-            const currentEntry = getSessionModelFallback(sessionKey);
-            if (currentEntry) {
-              const currentFb = currentEntry.fallbackModel;
-              const fbModel = customModels.find((m) => matchesCustomModel(m, currentFb));
-              const isFallback = fbModel ? matchesCustomModel(fbModel, cleanRequested) : false;
-              const isOriginal = candidateNames.slice(1).some((cn) => {
-                const origModel = customModels.find((m) => matchesCustomModel(m, cn));
-                return origModel ? matchesCustomModel(origModel, currentFb) : false;
-              });
-              if (!isFallback && !isOriginal) {
-                setSessionModelFallback(sessionKey, currentEntry.originalModel, cleanRequested);
-              }
-            }
+            clearSessionModelFallback(sessionKey);
           }
         }
       }
@@ -304,16 +292,26 @@ export async function handleCloudCodeGenerationRoute(
           }
         }
 
+        if (isAuxiliaryReq) {
+          const target = (reqJson.request || reqJson) as Record<string, any>;
+          if (!target.generationConfig) target.generationConfig = {};
+          if (!target.generationConfig.thinkingConfig) target.generationConfig.thinkingConfig = {};
+          target.generationConfig.thinkingConfig.thinkingLevel = 'low';
+          target.generationConfig.thinkingConfig.thinkingBudget = 1024;
+        }
+
         const auxTag = isAuxiliaryReq ? ` [Auxiliary Task: ${auxiliaryType || 'BACKGROUND'}]` : '';
         log.info(
           `[Proxy] [Incoming Request]${auxTag} Model requested: [${matchedCustomModel.displayName || matchedCustomModel.name}]${sessId ? ` (session: ${sessId})` : ''}`,
         );
 
         resolveFileData(actualGeminiBody, req.headers as Record<string, string | string[] | undefined>).then(async () => {
-          if (isGoogleCloudCodeModel(matchedCustomModel) || matchedCustomModel.name.includes(':auto-pool') || matchedCustomModel.apiKey === 'auto') {
+          if (isGoogleCloudCodeModel(matchedCustomModel) || matchedCustomModel.name.includes(':auto-pool') || matchedCustomModel.apiKey === 'auto' || isAuxiliaryReq) {
             try {
               const accountPool = getGoogleAccountPool(matchedCustomModel, customModels);
-              const resolvedModelName = normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
+              const resolvedModelName = isAuxiliaryReq
+                ? 'gemini-3.8-flash-tiered'
+                : normalizeCloudCodeModelId(matchedCustomModel.externalModelName || matchedCustomModel.name);
               if (resolvedModelName) {
                 reqJson.model = resolvedModelName;
                 if (reqJson.request && typeof reqJson.request === 'object') {

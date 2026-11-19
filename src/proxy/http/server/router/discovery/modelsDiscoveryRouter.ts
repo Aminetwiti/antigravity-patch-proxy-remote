@@ -145,7 +145,17 @@ export async function handleModelsDiscoveryRoute(
               const mDesc = String(mEntry.tagDescription || '');
               const mIdLower = mId.toLowerCase();
               const mDispLower = mDisp.toLowerCase();
-              const isCustomModel = mIdLower.startsWith('custom-') || mIdLower.includes('model_placeholder_') || mDisp.includes('🟣') || mDisp.includes('◆');
+              const isCustomModel =
+                mIdLower.startsWith('custom-') ||
+                mIdLower.includes('model_placeholder_') ||
+                mDisp.includes('🟣') ||
+                mDisp.includes('◆') ||
+                (customModels || []).some(
+                  (cm) =>
+                    (cm.name && mIdLower === cm.name.toLowerCase()) ||
+                    (cm.displayName && mDispLower === cm.displayName.toLowerCase()) ||
+                    (cm.externalModelName && mIdLower === cm.externalModelName.toLowerCase().replace(/^models\//, ''))
+                );
               // Preserve native Carbon, Argon, and Hydrogen as Unavailable / disabled
               if (
                 !isCustomModel &&
@@ -160,9 +170,10 @@ export async function handleModelsDiscoveryRoute(
               }
               if (isCustomModel) {
                 delete mEntry.disabled;
-                if (mTag.toLowerCase().includes('unavailable') || mDesc.toLowerCase().includes('unavailable')) {
-                  delete mEntry.tagTitle;
-                  delete mEntry.tagDescription;
+                delete mEntry.tagTitle;
+                delete mEntry.tagDescription;
+                if (!mEntry.quotaInfo) {
+                  mEntry.quotaInfo = { remainingFraction: 1, resetTime: '2099-01-01T00:00:00Z' };
                 }
               }
               if (

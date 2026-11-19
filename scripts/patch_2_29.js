@@ -393,7 +393,16 @@ exports.registerIpcHandlers = function(storageManager) {
     _origOfficialRegisterIpcHandlers(storageManager);
   }
   try {
-    const customBridge = require('./customIpcBridge');
+    let customBridge;
+    try {
+      customBridge = require('./customIpcBridge');
+    } catch (_) {
+      try {
+        customBridge = require('./ipc/customIpcBridge');
+      } catch (e2) {
+        console.error('[Proxy] Could not load customIpcBridge from ./customIpcBridge or ./ipc/customIpcBridge:', e2);
+      }
+    }
     if (customBridge && typeof customBridge.registerCustomIpcHandlers === 'function') {
       customBridge.registerCustomIpcHandlers(storageManager);
       console.log('[Proxy] Custom model IPC handlers registered successfully.');

@@ -109,6 +109,10 @@ export async function executeGoogleCloudCodeWithPool(
     if (allowOptimisticProbe) {
       log.info(`[Proxy] ⚡ All accounts marked exhausted/in cooldown for ${modelFamily}. Engaging optimistic probe on top candidate(s) to verify actual upstream status.`);
     }
+  } else if (initialHealthyCount > 0 && initialHealthyCount <= 2 && sortedAccounts.length >= 5) {
+    log.warn(
+      `[Proxy] ⚠️ [Pool Headroom Alert] Low available healthy accounts for ${modelFamily} (${initialHealthyCount}/${sortedAccounts.length} available, ${sortedAccounts.length - initialHealthyCount} in cooldown/quarantine). Operating near capacity.`,
+    );
   }
 
   const poolLoopStartTime = Date.now();
