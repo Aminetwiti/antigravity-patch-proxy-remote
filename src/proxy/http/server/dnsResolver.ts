@@ -108,8 +108,13 @@ export function resolveWithSystemDns(hostname: string): Promise<string[]> {
  * hostname so we can reuse it immediately for 0ms resolution, and fall back
  * to it when all DNS servers are unreachable. Entries expire after DNS_CACHE_TTL_MS.
  */
+interface DnsCacheEntry {
+  ip: string;
+  ts: number;
+  ttl: number;
+}
 const DNS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-const dnsCache = new Map<string, { ip: string; ts: number }>();
+const dnsCache = new Map<string, DnsCacheEntry>();
 
 export function clearDnsCache(): void {
   dnsCache.clear();
@@ -119,14 +124,14 @@ export function invalidateCachedDns(hostname: string): void {
   dnsCache.delete(hostname);
 }
 
-function cacheDnsResult(hostname: string, ip: string): void {
-  dnsCache.set(hostname, { ip, ts: Date.now() });
+function cacheDnsResult(hostname: string, ip: string, ttlMs = DNS_CACHE_TTL_MS): void {
+  dnsCache.set(hostname, { ip, ts: Date.now(), ttl: ttlMs });
 }
 
 function getFreshCachedDns(hostname: string): string | undefined {
   const entry = dnsCache.get(hostname);
   if (!entry) return undefined;
-  if (Date.now() - entry.ts <= DNS_CACHE_TTL_MS) {
+  if (Date.now() - entry.ts <= (entry.ttl || DNS_CACHE_TTL_MS)) {
     return entry.ip;
   }
   return undefined;
@@ -220,7 +225,7 @@ export async function resolveGoogleIp(hostname: string): Promise<string> {
   // 3. Last resort: use a cached/predefined fallback IP.
   const fallbackIp = await tryFallbackIp(hostname, deadline - Date.now());
   if (fallbackIp) {
-    cacheDnsResult(hostname, fallbackIp);
+    cacheDnsResult(hostname, fallbackIp, 15_000); // 15s short TTL for unverified hardcoded fallback
     log.warn(`[Proxy] resolveGoogleIp using hardcoded fallback ${fallbackIp} for ${hostname}`);
     return fallbackIp;
   }
@@ -236,7 +241,7 @@ export async function resolveGoogleIp(hostname: string): Promise<string> {
 const GOOGLE_FALLBACK_IPS: readonly string[] = [
   '142.250.80.46',
   '142.250.81.46',
-  '142.250.185.78',
+  '142.250.190.78',
   '172.217.16.46',
   '216.58.212.46',
 ];

@@ -93,10 +93,11 @@ export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<A
         return {
           fiveHourPercentage: Math.round(minRemainingFrac * 100),
           fiveHourResetTime: earliestReset,
-          weeklyPercentage: 100,
+          weeklyPercentage: effGem5h,
           geminiFiveHourPct: effGem5h,
           geminiFiveHourReset: effGemReset,
-          geminiWeeklyPct: 100,
+          geminiWeeklyPct: effGem5h,
+          geminiWeeklyReset: effGemReset,
           claudeFiveHourPct: effClaude5h,
           claudeFiveHourReset: effClaudeReset,
           claudeWeeklyPct: 100,
@@ -116,7 +117,7 @@ export async function fetchRealGoogleModelQuotas(accessToken: string): Promise<A
                 {
                   bucketId: 'gemini-weekly',
                   window: 'weekly',
-                  percentage: 100,
+                  percentage: effGem5h,
                   resetTime: effGemReset,
                 },
               ],

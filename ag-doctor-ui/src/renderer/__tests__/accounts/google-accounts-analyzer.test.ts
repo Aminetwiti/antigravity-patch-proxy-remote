@@ -93,6 +93,92 @@ describe('SOLID Architecture — Google Accounts Pure Analyzer (SRP)', () => {
       expect(eff.claudeWkPct).toBe(60);
     });
 
+    it('aligns gemini weekly with real 5h quota when weekly is omitted or defaults to 100 while 5h is lower', () => {
+      const acc = {
+        quotas: {
+          geminiFiveHourPct: 52,
+          geminiFiveHourReset: '2026-11-18T16:40:00Z',
+          claudeFiveHourPct: 0,
+          claudeWeeklyPct: 77,
+          claudeWeeklyReset: '2026-11-20T13:00:00Z',
+        },
+      };
+      const eff = getAccountEffectiveQuotas(acc);
+      expect(eff.gemini5hPct).toBe(52);
+      expect(eff.geminiWkPct).toBe(52);
+      expect(eff.geminiWkReset).toBe('2026-11-18T16:40:00Z');
+      expect(eff.claude5hPct).toBe(0);
+      expect(eff.claudeWkPct).toBe(77);
+      expect(eff.claudeWkReset).toBe('2026-11-20T13:00:00Z');
+    });
+
+    it('overrides static gemini-weekly bucket at 100% in groups with real 5h quota (REV-001 regression)', () => {
+      // Exact structure from quota_cache.json / custom_models.json: bucket gemini-weekly exists at 100%
+      // while geminiFiveHourPct has dropped to 52%. Weekly must NOT stay stuck at 100%.
+      const acc = {
+        quotas: {
+          geminiFiveHourPct: 52,
+          geminiWeeklyPct: 100,
+          geminiFiveHourReset: '2026-11-18T16:40:00Z',
+          geminiWeeklyReset: '2026-11-18T16:40:00Z',
+          claudeFiveHourPct: 0,
+          claudeWeeklyPct: 77,
+          groups: [
+            {
+              displayName: 'Gemini Models',
+              buckets: [
+                { bucketId: 'gemini-5h', window: '5h', percentage: 52, resetTime: '2026-11-18T16:40:00Z' },
+                { bucketId: 'gemini-weekly', window: 'weekly', percentage: 100, resetTime: '2026-11-18T16:40:00Z' },
+              ],
+            },
+            {
+              displayName: 'Claude and GPT models',
+              buckets: [
+                { bucketId: '3p-weekly', window: 'weekly', percentage: 77, resetTime: '2026-11-20T13:00:00Z' },
+                { bucketId: '3p-5h', window: '5h', percentage: 0 },
+              ],
+            },
+          ],
+        },
+      };
+      const eff = getAccountEffectiveQuotas(acc);
+      // Weekly must reflect the real 5h quota, NOT the static 100% from the bucket
+      expect(eff.gemini5hPct).toBe(52);
+      expect(eff.geminiWkPct).toBe(52);
+      expect(eff.claude5hPct).toBe(0);
+      expect(eff.claudeWkPct).toBe(77);
+    });
+
+    it('preserves real weekly value when genuinely below 100 (true 429 weekly exhaustion)', () => {
+      const acc = {
+        quotas: {
+          geminiFiveHourPct: 0,
+          geminiWeeklyPct: 0,
+          claudeFiveHourPct: 0,
+          claudeWeeklyPct: 0,
+        },
+      };
+      const eff = getAccountEffectiveQuotas(acc);
+      expect(eff.gemini5hPct).toBe(0);
+      expect(eff.geminiWkPct).toBe(0);
+      expect(eff.claude5hPct).toBe(0);
+      expect(eff.claudeWkPct).toBe(0);
+    });
+
+    it('shows 100% for both when account is fully healthy', () => {
+      const acc = {
+        quotas: {
+          geminiFiveHourPct: 100,
+          geminiWeeklyPct: 100,
+          claudeFiveHourPct: 100,
+          claudeWeeklyPct: 100,
+        },
+      };
+      const eff = getAccountEffectiveQuotas(acc);
+      expect(eff.gemini5hPct).toBe(100);
+      expect(eff.geminiWkPct).toBe(100);
+    });
+
     it('estimates tokens according to account tier', () => {
       const proAcc = {
         tier: 'PRO',

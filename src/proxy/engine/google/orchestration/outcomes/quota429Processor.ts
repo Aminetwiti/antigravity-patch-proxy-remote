@@ -1,4 +1,4 @@
-﻿import type * as http from 'http';
+import type * as http from 'http';
 import log from 'electron-log';
 import type { CustomModel } from '../../../../core/types';
 import type { GoogleRequestOutcome } from '../../direct/types';
@@ -6,6 +6,7 @@ import type { PoolLoopState } from '../types';
 import {
   classifyGoogleCloudCode429,
   setAccountCooldown,
+  setFleetModelCooldown,
   recordAccountBurst,
   getAccountQuotaKey,
   markAccountQuotaExhausted,
@@ -21,6 +22,28 @@ import {
 } from '../../../../../services/auth/googleAuth';
 import { sessionAffinities } from '../../../../resilience/pools/sessionAffinities';
 import { ROTATION_JITTER_MS } from '../../../../../constants';
+
+function interruptibleDelay(res: http.ServerResponse | any, ms: number): Promise<void> {
+  if (!res || res.destroyed || res.writableEnded || (res.socket && res.socket.destroyed)) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let timer: NodeJS.Timeout | null = null;
+    const onClose = () => {
+      if (timer) clearTimeout(timer);
+      resolve();
+    };
+    timer = setTimeout(() => {
+      if (typeof res?.removeListener === 'function') {
+        res.removeListener('close', onClose);
+      }
+      resolve();
+    }, ms);
+    if (typeof res?.once === 'function') {
+      res.once('close', onClose);
+    }
+  });
+}
 
 export async function processOutcome429(
   candidate: CustomModel,
@@ -145,18 +168,26 @@ export async function processOutcome429(
     }
     updateLiveAccountQuota(liveKey, updatedQ as AccountLiveQuota);
 
-    if (targetEmail && (isWeekly || cooldownDuration >= 3600_000)) {
+    const isUpstreamCapacitySpike = state.consecutiveQuotaExhausted >= 2 && !isWeekly && !isExplicitMultiHourReset;
+    if (targetEmail && (isWeekly || cooldownDuration >= 3600_000) && !isUpstreamCapacitySpike) {
       persistAccountQuotaExhaustedToDisk(targetEmail, resetIso, modelFamily);
     }
 
     const remainingHealthyWithQuota = sortedAccounts.slice(candidateIndex + 1).some(
       (c) => !isAccountInCooldown(c, modelFamily) && getModelQuotaScore(c, modelFamily) > 20,
     );
-    const fastFailThreshold = Math.max(3, Math.ceil(sortedAccounts.length * 0.4));
-    if (state.consecutiveQuotaExhausted >= fastFailThreshold && !remainingHealthyWithQuota && sortedAccounts.length > 3) {
+    const quotaExhaustedCap = Math.min(3, Math.max(2, Math.ceil(sortedAccounts.length * 0.25)));
+    const shouldFastFailQuota =
+      (state.consecutiveQuotaExhausted >= quotaExhaustedCap && sortedAccounts.length > 1) ||
+      (!remainingHealthyWithQuota && sortedAccounts.length > 1);
+
+    if (shouldFastFailQuota) {
       state.lastStatus = 429;
       state.lastErrorText = outcome.error || `HTTP 429 (${decision.reason})`;
-      log.warn(`[Proxy] Model ${targetModel} hit quota exhaustion across ${state.consecutiveQuotaExhausted} consecutive accounts. Fast-failing pool.`);
+      log.warn(
+        `[Proxy] Model ${targetModel} hit quota exhaustion across ${state.consecutiveQuotaExhausted} consecutive accounts. Fast-failing pool to protect remaining accounts.`,
+      );
+      setFleetModelCooldown(targetModel, 30_000, `Upstream quota exhaustion across ${state.consecutiveQuotaExhausted} accounts`);
       return { breakLoop: true, continueNext: false };
     }
   } else {
@@ -167,18 +198,42 @@ export async function processOutcome429(
   if (!isGenuineQuotaExhausted) state.consecutive429Count++;
   else state.consecutive429Count = 0;
 
-  const burst429Threshold = sortedAccounts.length > 4 ? 4 : Math.max(2, sortedAccounts.length);
-  if (state.consecutive429Count >= burst429Threshold && sortedAccounts.length > 1) {
+  const dynamicBurstThreshold = process.env.AG_BURST_429_THRESHOLD
+    ? Math.max(2, parseInt(process.env.AG_BURST_429_THRESHOLD, 10))
+    : Math.max(4, Math.ceil(sortedAccounts.length * 0.4));
+
+  const maxConsecutiveCap = process.env.AG_BURST_429_MAX_CAP
+    ? parseInt(process.env.AG_BURST_429_MAX_CAP, 10)
+    : 6;
+
+  const hasRemainingHealthy = sortedAccounts.slice(candidateIndex + 1).some(
+    (c) => !isAccountInCooldown(c, modelFamily) && (c as any).enabled !== false && getModelQuotaScore(c, modelFamily) > 0,
+  );
+
+  const reachedFleetCap = state.consecutive429Count >= maxConsecutiveCap;
+
+  const shouldBreakFleet = (state.consecutive429Count >= dynamicBurstThreshold && !hasRemainingHealthy) || reachedFleetCap;
+
+  if (shouldBreakFleet && sortedAccounts.length > 1) {
     state.lastStatus = 429;
     state.lastErrorText = outcome.error || `HTTP 429 (${decision.reason} across ${state.consecutive429Count} accounts)`;
-    log.warn(`[Proxy] 🛑 429 Fleet Circuit Breaker: Model ${targetModel} hit rate limits across ${state.consecutive429Count} accounts. Stopping rotation.`);
+    log.warn(`[Proxy] 🛑 429 Fleet Circuit Breaker (Google Edge IP Throttle): Model ${targetModel} hit edge rate limits across ${state.consecutive429Count} accounts. Stopping rotation.`);
+    // Enforce fleet-wide cooldown on model and family to prevent subsequent requests from repeating 429 storm
+    const fleetCooldownMs = process.env.AG_FLEET_429_COOLDOWN_MS
+      ? parseInt(process.env.AG_FLEET_429_COOLDOWN_MS, 10)
+      : 30_000;
+    setFleetModelCooldown(targetModel, fleetCooldownMs, `Fleet 429 burst across ${state.consecutive429Count} accounts`);
+    // Only cooldown the specific model family if it is NOT the generic 'gemini' (which would inadvertently freeze Flash when Hydrogen throttles)
+    if (modelFamily && modelFamily !== 'gemini') {
+      setFleetModelCooldown(modelFamily, Math.min(25_000, fleetCooldownMs), `Fleet 429 burst across ${state.consecutive429Count} accounts`);
+    }
     return { breakLoop: true, continueNext: false };
   }
 
   if (state.consecutive429Count === 3) {
     if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
     log.warn(`[Proxy] ⏳ [IP Throttle Defense] 3 consecutive burst 429s encountered. Applying 2.5s IP token bucket drain...`);
-    await new Promise((r) => setTimeout(r, 2500));
+    await interruptibleDelay(res, 2500);
     if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
   }
 
@@ -205,15 +260,7 @@ export async function processOutcome429(
         log.info(
           `[Proxy] ⚡ Quota exhausted on [${candidateName}] (${modelFamily}). Anti-cascade jitter ${jitterMs}ms before next account.`,
         );
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, jitterMs);
-          if (typeof res?.once === 'function') {
-            res.once('close', () => {
-              clearTimeout(timer);
-              resolve();
-            });
-          }
-        });
+        await interruptibleDelay(res, jitterMs);
         if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
       } else {
         log.info(`[Proxy] ⚡ Quota exhausted on [${candidateName}] (${modelFamily}). Immediate 0ms rotation.`);
@@ -224,11 +271,18 @@ export async function processOutcome429(
     const hasAvailableSibling = sortedAccounts.slice(candidateIndex + 1).some(
       (c) => !isAccountInCooldown(c, modelFamily) && (c as any).enabled !== false,
     );
-    if (!hasAvailableSibling) {
+    if (hasAvailableSibling) {
+      // Micro-pacing anti-burst: 150-250ms delay with jitter to prevent slamming Google's IP token bucket
+      const burstJitterMs = 150 + Math.floor(Math.random() * 100);
+      if (!res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
+        await interruptibleDelay(res, burstJitterMs);
+        if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
+      }
+    } else {
       const pacingMs = state.consecutive429Count > 1 ? 2000 + Math.floor(Math.random() * 800) : 1000 + Math.floor(Math.random() * 400);
       log.info(`[Proxy] ⏳ [IP Bucket Drain] Pause préventive de ${pacingMs}ms pour vider le seau IP Google.`);
       if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
-      await new Promise((r) => setTimeout(r, pacingMs));
+      await interruptibleDelay(res, pacingMs);
       if (res.destroyed || Boolean(res.socket && res.socket.destroyed)) return { breakLoop: true, continueNext: false };
     }
   }

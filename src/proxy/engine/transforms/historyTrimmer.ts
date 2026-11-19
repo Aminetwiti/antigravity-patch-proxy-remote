@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
+import { fileURLToPath } from 'url';
 import { FILE_DOWNLOAD_TIMEOUT_MS } from '../../../constants';
 import type { GeminiRequestBody } from '../../core/types';
 import { normalizeConversationTurns } from '../../../services/auth/googleAuth';
@@ -86,8 +87,8 @@ export async function resolveFileData(body: GeminiRequestBody, reqHeaders: Recor
         const uri = fd.fileUri;
         let fileContent = '';
         if (uri.startsWith('file://')) {
-          const fp = uri.replace('file://', '').replace(/\//g, path.sep);
           try {
+            const fp = fileURLToPath(uri);
             await fs.promises.access(fp);
             fileContent = await fs.promises.readFile(fp, 'utf-8');
           } catch {

@@ -223,12 +223,18 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
     }
 
     const disabledProviderModelIds = new Set<string>();
+    const enabledProviderModelIds = new Set<string>();
     if (isGoogle && Array.isArray(p.models)) {
       for (const pm of p.models) {
-        if (pm && pm.enabled === false && pm.id) {
-          disabledProviderModelIds.add(pm.id);
+        if (pm && pm.id) {
           const norm = normalizeCloudCodeModelId(pm.id);
-          if (norm) disabledProviderModelIds.add(norm);
+          if (pm.enabled === false) {
+            disabledProviderModelIds.add(pm.id);
+            if (norm) disabledProviderModelIds.add(norm);
+          } else {
+            enabledProviderModelIds.add(pm.id);
+            if (norm) enabledProviderModelIds.add(norm);
+          }
         }
       }
     }
@@ -243,13 +249,26 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
           updateLiveAccountQuota(accKey, (acc as any).quotas);
         }
       }
-      const targetModels = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : models;
+      const accModelsList = Array.isArray((acc as any).models) && (acc as any).models.length > 0 ? (acc as any).models : [];
+      const hasExplicitAccountModels = accModelsList.length > 0;
+      let targetModels: any[];
+      if (accModelsList.length === 0) {
+        targetModels = models;
+      } else {
+        const seenIds = new Set(accModelsList.map((m: any) => (typeof m === 'string' ? m : m?.id || '')));
+        const missingFromProvider = (models || []).filter((pm: any) => {
+          const pmId = typeof pm === 'string' ? pm : pm?.id || '';
+          return pmId && !seenIds.has(pmId);
+        });
+        targetModels = [...accModelsList, ...missingFromProvider];
+      }
       for (const rawM of targetModels) {
         const m = typeof rawM === 'string' ? { id: rawM, displayName: '', enabled: true } : rawM;
-        if (m.enabled === false && !includeDisabled) continue;
         const mId = m.id ?? '';
         const normMId = isGoogle ? normalizeCloudCodeModelId(mId) : '';
-        if ((disabledProviderModelIds.has(mId) || (normMId && disabledProviderModelIds.has(normMId))) && !includeDisabled) continue;
+        const isExplicitlyEnabledAtProvider = enabledProviderModelIds.has(mId) || (Boolean(normMId) && enabledProviderModelIds.has(normMId));
+        if (m.enabled === false && !isExplicitlyEnabledAtProvider && !includeDisabled) continue;
+        if (!hasExplicitAccountModels && (disabledProviderModelIds.has(mId) || (normMId && disabledProviderModelIds.has(normMId))) && !includeDisabled) continue;
         if (isObsoleteModel(mId, m.displayName)) continue;
         if (isGeminiCli && (mId.includes('gemini-2') || mId.includes('gemini-3.1') || mId.includes('gemini-3.0') || mId.includes('gemini-1'))) {
           continue;
@@ -258,12 +277,18 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
         const mergedBody = { ...p.extraBody, ...(m as { extraBody?: Record<string, unknown> }).extraBody };
 
         let displayName = m.displayName ?? '';
-        if (!displayName || displayName === mId || displayName.includes('-tiered')) {
-          const norm = normalizeCloudCodeModelId(mId);
-          if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
-          else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
-          else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
-          else displayName = mId;
+        if (isGoogle) {
+          if (!displayName || displayName === mId || displayName.includes('-tiered') || displayName === 'gemini-4-hydrogen-sonar' || displayName === 'gemini-4-hydrogen') {
+            const norm = normalizeCloudCodeModelId(mId);
+            if (norm === 'gemini-3.8-flash-tiered') displayName = 'Gemini 3.8 Flash';
+            else if (norm === 'claude-sonnet-4-6') displayName = 'Claude Sonnet 4.6 (Thinking)';
+            else if (norm === 'claude-opus-4-6-thinking') displayName = 'Claude Opus 4.6 (Thinking)';
+            else if (mId === 'gemini-4-hydrogen-sonar' || mId.toLowerCase().includes('sonar')) displayName = 'Gemini 4 Hydrogen (Sonar)';
+            else if (mId === 'gemini-4-hydrogen' || norm === 'gemini-4-hydrogen') displayName = 'Gemini 4 Hydrogen';
+            else displayName = mId;
+          }
+        } else if (!displayName) {
+          displayName = mId;
         }
 
         const accProvider = (acc as any).provider || (p.provider ?? 'openai');
@@ -271,9 +296,10 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
         const accApiUrl = (acc as any).apiUrl as string | undefined;
         const isAiStudio = accProvider === 'google-gemini' || (Boolean(acc.apiKey) && (String(acc.apiKey).startsWith('AIzaSy') || String(acc.apiKey).startsWith('AQ')) && !acc.refreshToken);
 
-        // Google AI Studio does not support Claude models
+        // Google AI Studio does not support Claude models nor Cloud Code internal codenames (hydrogen, sonar)
         const isClaude = mId.includes('claude') || displayName.toLowerCase().includes('claude');
-        if (isAiStudio && isClaude) {
+        const isCloudCodeExclusive = mId.includes('hydrogen') || mId.includes('sonar');
+        if (isAiStudio && (isClaude || isCloudCodeExclusive)) {
           continue;
         }
 
@@ -289,7 +315,7 @@ export function parseProvidersSchema(providers: RawProviderEntry[], includeDisab
                       : (p.apiUrl?.includes('cloudcode') && !p.apiUrl.includes('cloudcode-pa.googleapis.com') ? p.apiUrl : 'https://daily-cloudcode-pa.googleapis.com'))
                   : (accApiUrl || p.apiUrl || '')));
 
-        const isAccountExplicitlyDisabled = acc.enabled === false || m.enabled === false || p.enabled === false;
+        const isAccountExplicitlyDisabled = acc.enabled === false || (m.enabled === false && !isExplicitlyEnabledAtProvider) || p.enabled === false;
         const accountStatus = (acc as any).status || (p as any).status;
         const isValReq = Boolean(
           (acc as any).isValidationRequired ||
@@ -415,7 +441,7 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
     for (const m of loadedModels) {
       if (m.provider === 'google' || isGoogleCloudCodeModel(m)) {
         const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim();
-        if (rawName) {
+        if (rawName && rawName.toLowerCase() !== 'gemini-4-hydrogen') {
           const norm = isGoogleCloudCodeModel(m)
             ? normalizeCloudCodeModelId(rawName)
             : normalizeGoogleModelId(rawName);
@@ -445,17 +471,22 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
     const googleFamilyModels = loadedModels.filter(isGoogleFamily);
     const otherModels = loadedModels.filter(m => !isGoogleFamily(m));
 
+    const isUnsupportedCloudCodeModel = (name: string) => {
+      const lower = (name || '').toLowerCase();
+      return lower.includes('argon') || lower.includes('carbon');
+    };
+
     const seenBaseIds = new Map<string, CustomModel>();
     for (const m of googleFamilyModels) {
       const raw = (m.externalModelName || m.name || '').replace(/^models\//, '');
       const rawLower = raw.toLowerCase();
-      // Argon is purely a native Antigravity model and does not exist on Google Cloud Code OAuth API (returns 404).
-      // Skip auto-pool generation so Argon is always handled transparently by native Antigravity.
-      if (rawLower.includes('argon') && isGoogleCloudCodeModel(m)) {
+      // Argon, Hydrogen and Carbon are internal/native models not supported on Google Cloud Code OAuth API (returns 404/400).
+      // Skip auto-pool generation so they are not injected as broken pools.
+      if (isUnsupportedCloudCodeModel(rawLower) && isGoogleCloudCodeModel(m)) {
         continue;
       }
-      const baseId = normalizeCloudCodeModelId(raw);
-      if (baseId.toLowerCase().includes('argon') && isGoogleCloudCodeModel(m)) {
+      const baseId = rawLower === 'gemini-4-hydrogen' ? 'gemini-4-hydrogen' : normalizeCloudCodeModelId(raw);
+      if (isUnsupportedCloudCodeModel(baseId) && isGoogleCloudCodeModel(m)) {
         continue;
       }
       if (!seenBaseIds.has(baseId)) {
@@ -466,11 +497,13 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
     const pooledGoogleModels: CustomModel[] = [];
     seenBaseIds.forEach((template, baseId) => {
       let displayName = template.displayName || baseId;
-      displayName = displayName.replace(/^\[[^\]]+\]\s*/, '');
-      if (baseId === 'gemini-3.8-flash-tiered') displayName = '[Pool] Gemini 3.8 Flash';
-      else if (baseId === 'claude-sonnet-4-6') displayName = '[Pool] Claude Sonnet 4.6 (Thinking)';
-      else if (baseId === 'claude-opus-4-6-thinking') displayName = '[Pool] Claude Opus 4.6 (Thinking)';
-      else if (!displayName.includes('[Pool]')) displayName = '[Pool] ' + displayName;
+      displayName = displayName.replace(/^\[[^\]]+\]\s*/, '').trim();
+      if (baseId === 'gemini-3.8-flash-tiered' && (!displayName || displayName === baseId)) displayName = 'Gemini 3.8 Flash';
+      else if (baseId === 'claude-sonnet-4-6' && (!displayName || displayName === baseId)) displayName = 'Claude Sonnet 4.6 (Thinking)';
+      else if (baseId === 'claude-opus-4-6-thinking' && (!displayName || displayName === baseId)) displayName = 'Claude Opus 4.6 (Thinking)';
+      else if (baseId === 'gemini-4-hydrogen' && (!displayName || displayName === baseId)) displayName = 'Gemini 4 Hydrogen';
+      else if (baseId === 'gemini-4-hydrogen-sonar' && (!displayName || displayName === baseId || displayName.includes('gemini-4-hydrogen'))) displayName = 'Gemini 4 Hydrogen (Sonar)';
+      else displayName = displayName || baseId;
 
       pooledGoogleModels.push({
         ...template,
@@ -483,15 +516,15 @@ export function loadCustomModels(includeDisabled = false): CustomModel[] {
         refreshToken: undefined,
         accountName: '',
         accountEmail: '',
-        _poolOnly: (baseId !== 'gemini-3.8-flash-tiered') ? (true as const) : undefined,
+        _poolOnly: undefined,
         _effortSuffix: template._effortSuffix || '',
       });
     });
 
     // Mark ALL real per-account entries (both Cloud Code and AI Studio) as dispatch-only (hidden from dropdown)
-    // Exclude Argon from Cloud Code OAuth dispatch pool since Cloud Code OAuth returns 404 for Argon.
+    // Exclude Argon, Hydrogen and Carbon from Cloud Code OAuth dispatch pool since Cloud Code OAuth returns 404 for them.
     const realGoogleModels = googleFamilyModels
-      .filter((m) => !(m.externalModelName || m.name || '').toLowerCase().includes('argon') || !isGoogleCloudCodeModel(m))
+      .filter((m) => !isUnsupportedCloudCodeModel(m.externalModelName || m.name || '') || !isGoogleCloudCodeModel(m))
       .map((m) => ({ ...m, _poolOnly: true as const }));
 
     const result = [...pooledGoogleModels, ...realGoogleModels, ...otherModels];

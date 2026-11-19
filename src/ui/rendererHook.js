@@ -801,14 +801,24 @@
       } catch (_) {}
     }
 
+    function getPluginBasePath() {
+      var env = (typeof process !== 'undefined' && process.env) || (typeof window !== 'undefined' && window.process && window.process.env) || {};
+      var home = (env.USERPROFILE || env.HOME || '~').replace(/\\/g, '/');
+      return home.replace(/\/+$/, '') + '/.gemini/config/plugins';
+    }
+
     function buildInstalledPluginObject(item) {
       const pluginSlug = item.slug || (item.id ? item.id.split('/').pop() : 'plugin');
+      const basePath = getPluginBasePath();
+      const fileUri = basePath.startsWith('~')
+        ? basePath + '/' + pluginSlug
+        : (basePath.match(/^[a-zA-Z]:/) ? 'file:///' : 'file://') + basePath.replace(/^\/+/, '') + '/' + pluginSlug;
       return {
         name: pluginSlug,
         displayName: item.displayName || pluginSlug,
         display_name: item.displayName || pluginSlug,
         description: item.description || '',
-        path: 'file:///C:/Users/amine/.gemini/config/plugins/' + pluginSlug,
+        path: fileUri,
         isGlobal: false,
         is_global: false,
         disabled: false,
@@ -844,7 +854,7 @@
           return {
             name: s.name,
             description: s.description || ('Skill: ' + s.name),
-            path: 'C:/Users/amine/.gemini/config/plugins/' + pluginSlug + '/skills/' + s.name + '.md'
+            path: basePath + '/' + pluginSlug + '/skills/' + s.name + '.md'
           };
         }),
         agents: item.agents || [],

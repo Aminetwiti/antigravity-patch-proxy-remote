@@ -296,4 +296,74 @@ describe('loadCustomModels', () => {
     expect(models.length).toBe(1);
     expect(models[0].externalModelName).toBe('deepseek-chat');
   });
+
+  it('[AUDIT-001] excludes argon and carbon from google auto-pool generation', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    const providersFile = {
+      providers: [
+        {
+          id: 'provider-google',
+          provider: 'google',
+          apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+          enabled: true,
+          accounts: [
+            {
+              id: 'acc-1',
+              email: 'test@example.com',
+              refreshToken: 'enc:refresh',
+              enabled: true,
+              models: [
+                { id: 'gemini-3.8-flash-tiered', displayName: 'Gemini 3.8 Flash', enabled: true },
+                { id: 'gemini-4-argon-high', displayName: 'Gemini 4 Argon', enabled: true },
+                { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', enabled: true },
+                { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', enabled: true },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(providersFile));
+
+    const models = loadCustomModels();
+    // Auto-pool models must NOT contain argon or carbon, but user-configured hydrogen is allowed
+    const autoPoolNames = models.filter((m) => m.name.includes(':auto-pool')).map((m) => m.name);
+    expect(autoPoolNames.some((n) => n.includes('argon'))).toBe(false);
+    expect(autoPoolNames.some((n) => n.includes('carbon'))).toBe(false);
+    expect(autoPoolNames.some((n) => n.includes('gemini-3.8-flash-tiered'))).toBe(true);
+    expect(autoPoolNames.some((n) => n.includes('hydrogen'))).toBe(true);
+  });
+
+  it('[AUDIT-004] respects explicit account-level models even when provider-level template has disabled flag', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    const providersFile = {
+      providers: [
+        {
+          id: 'provider-google',
+          provider: 'google',
+          apiUrl: 'https://daily-cloudcode-pa.googleapis.com',
+          enabled: true,
+          models: [
+            { id: 'claude-sonnet-4-6', enabled: false }, // disabled at provider level template
+          ],
+          accounts: [
+            {
+              id: 'acc-1',
+              email: 'test@example.com',
+              refreshToken: 'enc:refresh',
+              enabled: true,
+              models: [
+                { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', enabled: true }, // explicitly enabled at account level
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(providersFile));
+
+    const models = loadCustomModels();
+    const sonnet = models.find((m) => m.name.includes('claude-sonnet-4-6'));
+    expect(sonnet).toBeDefined();
+  });
 });

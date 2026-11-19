@@ -92,6 +92,10 @@ export function getMappedCustomModels() {
       requestedModel: pid,
       apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
       modelProvider: 'MODEL_PROVIDER_GOOGLE',
+      quotaInfo: {
+        remainingFraction: 1,
+        resetTime: '2099-01-01T00:00:00Z',
+      },
     };
   });
   return mappedCustom;
@@ -185,22 +189,18 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
           const entryDisp = String(entry.displayName || '');
           const entryTag = String(entry.tagTitle || '');
           const entryDesc = String(entry.tagDescription || '');
-          const isArgon = k.toLowerCase().includes('argon') || entryDisp.toLowerCase().includes('argon');
-          const isUnavailable = entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra') || entry.disabled === true;
+          const kLower = k.toLowerCase();
+          const dispLower = entryDisp.toLowerCase();
+          const isNativeUnavailable =
+            kLower.includes('carbon') || dispLower.includes('carbon') ||
+            kLower.includes('argon') || dispLower.includes('argon') ||
+            ((kLower.includes('hydrogen') || dispLower.includes('hydrogen')) && !kLower.includes('sonar') && !dispLower.includes('sonar')) ||
+            entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra') || entry.disabled === true;
 
-          // Keep Argon disabled if upstream returns it disabled (standard Google Cloud Code accounts have 0 Argon quota)
-          if (!isArgon && isUnavailable) {
-            delete entry.disabled;
-            if (entryTag.toLowerCase().includes('unavailable') || entryDesc.toLowerCase().includes('ultra')) {
-              delete entry.tagTitle;
-              delete entry.tagDescription;
-            }
-            if (!entry.quotaInfo) {
-              entry.quotaInfo = {
-                remainingFraction: 1,
-                resetTime: '2099-01-01T00:00:00Z',
-              };
-            }
+          if (isNativeUnavailable) {
+            entry.disabled = true;
+            entry.tagTitle = 'Unavailable';
+            entry.tagDescription = 'Unavailable';
           }
           result[k] = entry;
         } else {
@@ -229,6 +229,10 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
         requestedModel: pid,
         apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
         modelProvider: 'MODEL_PROVIDER_GOOGLE',
+        quotaInfo: {
+          remainingFraction: 1,
+          resetTime: '2099-01-01T00:00:00Z',
+        },
       };
       if (cap.supportsImages) {
         entry.supportsVideo = false;
@@ -309,6 +313,10 @@ export function mergeModels(target: unknown, customModels: CustomModel[]): unkno
             requestedModel: pid,
             apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
             modelProvider: 'MODEL_PROVIDER_GOOGLE',
+            quotaInfo: {
+              remainingFraction: 1,
+              resetTime: '2099-01-01T00:00:00Z',
+            },
           };
           (result as Record<string, unknown>)[pid] = entry;
           (result as Record<string, unknown>)[`models/${pid}`] = entry;

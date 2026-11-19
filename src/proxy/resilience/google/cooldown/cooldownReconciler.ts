@@ -7,6 +7,8 @@ import {
   accountProbationUntil,
   quotaExhaustedAccountKeys,
   rateLimitedCooldownKeys,
+  quarantinedAccountKeys,
+  isAccountQuarantined,
 } from './cooldownState';
 
 /**
@@ -31,13 +33,18 @@ function evaluateFamilyRecovery(
     ? (quota.geminiResetTime || quota.geminiFiveHourReset || (quota as any).fiveHourResetTime)
     : (quota.claudeResetTime || quota.claudeFiveHourReset || (quota as any).fiveHourResetTime);
   const resetTs = resetStr ? Date.parse(resetStr) : 0;
-  const resetPassed = Boolean(resetStr && resetTs > 0 && resetTs <= now);
+  // A reset timestamp is only valid if it elapsed recently (within 2h),
+  // preventing stale reset timestamps from yesterday/days ago from falsely lifting active cooldowns.
+  const resetPassed = Boolean(resetStr && resetTs > 0 && resetTs <= now && (now - resetTs) <= 2 * 3600_000);
 
   const weeklyResetStr = isGemini
     ? (quota.geminiWeeklyReset || (quota as any).weeklyResetTime)
     : (quota.claudeWeeklyReset || (quota as any).weeklyResetTime);
   const weeklyResetTs = weeklyResetStr ? Date.parse(weeklyResetStr) : 0;
-  const weeklyResetPassed = Boolean((weeklyResetTs > 0 && weeklyResetTs <= now) || (!weeklyResetStr && quotaIsFresh && (weekVal === null || weekVal >= 20) && fiveHourPct >= 20));
+  const weeklyResetPassed = Boolean(
+    (weeklyResetTs > 0 && weeklyResetTs <= now && (now - weeklyResetTs) <= 24 * 3600_000) ||
+    (!weeklyResetStr && quotaIsFresh && (weekVal === null || weekVal >= 20) && fiveHourPct >= 20),
+  );
   const weeklyDepleted = weekVal !== null && weekVal < 5 && !weeklyResetPassed;
 
   const label = isGemini ? 'Gemini' : 'Claude';
@@ -93,6 +100,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
     } else if (key.endsWith(':claude')) {
       accKey = key.slice(0, -7);
       family = 'claude';
+    } else if (key.endsWith(':sonar')) {
+      accKey = key.slice(0, -6);
+      family = 'gemini';
     }
 
     const normAcc = accKey.startsWith('google:') ? accKey : `google:${accKey}`;
@@ -106,6 +116,8 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
       googleAccountCooldowns.delete(altKey);
       quotaExhaustedAccountKeys.delete(key);
       quotaExhaustedAccountKeys.delete(altKey);
+      quarantinedAccountKeys.delete(key);
+      quarantinedAccountKeys.delete(altKey);
       accountProbationUntil.delete(key);
       accountProbationUntil.delete(altKey);
       rateLimitedCooldownKeys.delete(key);
@@ -114,6 +126,12 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
       details.push(`${key} (expired naturally)`);
       continue;
     }
+
+    const isQuarantined =
+      quarantinedAccountKeys.has(key) ||
+      isAccountQuarantined(accKey, family || undefined);
+
+    if (isQuarantined) continue;
 
     let quota = quotas.get(normAcc) || quotas.get(rawAcc) || quotas.get(accKey);
     if (!quota && Array.isArray(customModels)) {
@@ -168,19 +186,19 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         } else if (!gRes.shouldWakeUp && cRes.shouldWakeUp) {
           const cdUntil = googleAccountCooldowns.get(key);
           if (cdUntil && cdUntil > now) {
-            googleAccountCooldowns.set(`${key}:gemini`, cdUntil);
-            if (isQuotaExhausted) quotaExhaustedAccountKeys.add(`${key}:gemini`);
+            googleAccountCooldowns.set(`${normAcc}:gemini`, cdUntil);
+            if (isQuotaExhausted) quotaExhaustedAccountKeys.add(`${normAcc}:gemini`);
           }
           shouldWakeUp = true;
-          reason = `Decoupled root cooldown: freed Claude, partitioned Gemini to ${key}:gemini`;
+          reason = `Decoupled root cooldown: freed Claude, partitioned Gemini to ${normAcc}:gemini`;
         } else if (gRes.shouldWakeUp && !cRes.shouldWakeUp) {
           const cdUntil = googleAccountCooldowns.get(key);
           if (cdUntil && cdUntil > now) {
-            googleAccountCooldowns.set(`${key}:claude`, cdUntil);
-            if (isQuotaExhausted) quotaExhaustedAccountKeys.add(`${key}:claude`);
+            googleAccountCooldowns.set(`${normAcc}:claude`, cdUntil);
+            if (isQuotaExhausted) quotaExhaustedAccountKeys.add(`${normAcc}:claude`);
           }
           shouldWakeUp = true;
-          reason = `Decoupled root cooldown: freed Gemini, partitioned Claude to ${key}:claude`;
+          reason = `Decoupled root cooldown: freed Gemini, partitioned Claude to ${normAcc}:claude`;
         }
       }
 
@@ -189,6 +207,8 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
         googleAccountCooldowns.delete(altKey);
         quotaExhaustedAccountKeys.delete(key);
         quotaExhaustedAccountKeys.delete(altKey);
+        quarantinedAccountKeys.delete(key);
+        quarantinedAccountKeys.delete(altKey);
         accountProbationUntil.delete(key);
         accountProbationUntil.delete(altKey);
         rateLimitedCooldownKeys.delete(key);
@@ -204,6 +224,9 @@ export function verifyAndReconcileCooldowns(now = Date.now(), customModels?: Cus
   }
   for (const k of Array.from(rateLimitedCooldownKeys)) {
     if (!googleAccountCooldowns.has(k)) rateLimitedCooldownKeys.delete(k);
+  }
+  for (const k of Array.from(quarantinedAccountKeys)) {
+    if (!googleAccountCooldowns.has(k)) quarantinedAccountKeys.delete(k);
   }
 
   const active = new Set(Array.from(googleAccountCooldowns.keys()).map((k) => k.replace(/^google:/, ''))).size;

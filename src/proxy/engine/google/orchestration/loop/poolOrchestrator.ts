@@ -37,12 +37,13 @@ import {
   recordAccountLatency,
   setAccountCooldown,
   getSoonestAccountCooldownRemaining,
+  getFleetModelCooldown,
 } from '../../../../resilience/googlePool';
 import { getOpenBreaker, recordFailure } from '../../../../resilience/circuitBreaker';
 import { evictAgent } from '../../../../resilience/agentPool';
 import { invalidateCachedDns } from '../../../../http/dnsResolver';
 import { sessionAffinities } from '../../../../resilience/sessionAffinities';
-import { GOOGLE_HOSTS, RATE_LIMIT_RELIEF_WAIT_MS } from '../../../../../constants';
+import { GOOGLE_HOSTS, RATE_LIMIT_RELIEF_WAIT_MS, MAX_RELIEF_WAIT_MS } from '../../../../../constants';
 
 export async function executeGoogleCloudCodeWithPool(
   req: http.IncomingMessage,
@@ -74,12 +75,44 @@ export async function executeGoogleCloudCodeWithPool(
   const initialHealthyCount = sortedAccounts.filter((a) => !isAccountInCooldown(a, modelFamily) && !getOpenBreaker(a) && getModelQuotaScore(a, modelFamily) > 0).length;
   const allowOptimisticProbe = initialHealthyCount === 0 && sortedAccounts.length > 0;
 
+  const fleetCooldown = getFleetModelCooldown(resolvedTarget).active
+    ? getFleetModelCooldown(resolvedTarget)
+    : getFleetModelCooldown(modelFamily);
+
+  if (fleetCooldown.active && fallbackDepth === 0 && sortedAccounts.length > 1) {
+    log.warn(
+      `[Proxy] 🛑 [Fleet Cooldown] Active for [${resolvedTarget}] (${Math.round(fleetCooldown.remainingMs / 1000)}s remaining - ${fleetCooldown.reason}). Fast-skipping loop directly to fallback cascade.`,
+    );
+    state.lastStatus = 429;
+    state.lastErrorText = `Fleet 429 cooldown active for ${resolvedTarget}: ${fleetCooldown.reason}`;
+    const fbOk = await attemptFallbackCascade({
+      req,
+      res,
+      reqJson,
+      accountPool,
+      isSessionRemote,
+      convId,
+      sessId,
+      attemptedModels,
+      fallbackDepth,
+      lastStatus: state.lastStatus,
+      lastErrorText: state.lastErrorText,
+      targetRaw,
+      poolExecutor: executeGoogleCloudCodeWithPool,
+    });
+    if (fbOk) return true;
+  }
+
   if (initialHealthyCount === 0 && sortedAccounts.length > 0) {
     state.lastStatus = 429;
     state.lastErrorText = `All ${sortedAccounts.length} accounts in Google Cloud Code pool are unavailable for ${modelFamily}`;
     if (allowOptimisticProbe) {
       log.info(`[Proxy] ⚡ All accounts marked exhausted/in cooldown for ${modelFamily}. Engaging optimistic probe on top candidate(s) to verify actual upstream status.`);
     }
+  } else if (initialHealthyCount > 0 && initialHealthyCount <= 2 && sortedAccounts.length >= 5) {
+    log.warn(
+      `[Proxy] ⚠️ [Pool Headroom Alert] Low available healthy accounts for ${modelFamily} (${initialHealthyCount}/${sortedAccounts.length} available, ${sortedAccounts.length - initialHealthyCount} in cooldown/quarantine). Operating near capacity.`,
+    );
   }
 
   const poolLoopStartTime = Date.now();
@@ -106,7 +139,9 @@ export async function executeGoogleCloudCodeWithPool(
     }
 
     const targetModel = candidate.externalModelName || candidate.name;
-    const currentFamily = targetModel.toLowerCase().includes('claude') ? 'claude' : (targetModel ? 'gemini' : modelFamily);
+    const currentFamily = targetModel.toLowerCase().includes('claude')
+      ? 'claude'
+      : (targetModel.toLowerCase().includes('sonar') ? 'sonar' : (targetModel ? 'gemini' : modelFamily));
     state.networkAttemptCount++;
 
     let accessToken: string | null = null;
@@ -202,7 +237,11 @@ export async function executeGoogleCloudCodeWithPool(
       if (res429.breakLoop) break;
       if (res429.continueNext) {
         // Anti-burst jitter to prevent triggering Google Edge velocity/scraping heuristics (Issue #408)
-        await new Promise((r) => setTimeout(r, Math.floor(150 + Math.random() * 200)));
+        const backoffMs =
+          state.consecutive429Count > 1 || state.consecutiveQuotaExhausted > 1
+            ? Math.floor(400 + Math.random() * 300)
+            : Math.floor(200 + Math.random() * 200);
+        await new Promise((r) => setTimeout(r, backoffMs));
         continue;
       }
     }
@@ -260,15 +299,28 @@ export async function executeGoogleCloudCodeWithPool(
   if (fbOk) return true;
 
   if (state.lastStatus === 429 && fallbackDepth === 0 && process.env.AG_DISABLE_RATE_LIMIT_RELIEF !== '1' && process.env.NODE_ENV !== 'test' && !process.env.VITEST && !res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
-    const soonest = getSoonestAccountCooldownRemaining(accountPool, modelFamily, RATE_LIMIT_RELIEF_WAIT_MS);
-    if (soonest) {
-      const waitMs = soonest.remainingMs > 0 ? Math.min(soonest.remainingMs + 800, RATE_LIMIT_RELIEF_WAIT_MS) : 15_000;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, waitMs);
-        if (typeof res?.once === 'function') res.once('close', () => { clearTimeout(timer); resolve(); });
-      });
-      if (!res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
-        return executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, isSessionRemote, convId, sessId, attemptedModels, fallbackDepth + 1);
+    const elapsedSoFar = Date.now() - poolLoopStartTime;
+    const maxReliefWaitMs = Math.min(MAX_RELIEF_WAIT_MS, RATE_LIMIT_RELIEF_WAIT_MS);
+    if (elapsedSoFar < 50_000) {
+      const soonest = getSoonestAccountCooldownRemaining(accountPool, modelFamily, maxReliefWaitMs);
+      if (soonest && soonest.remainingMs > 0 && (elapsedSoFar + soonest.remainingMs) < 65_000) {
+        const waitMs = Math.min(soonest.remainingMs + 800, maxReliefWaitMs);
+        log.info(`[Proxy] ⏳ All accounts rate-limited for ${modelFamily}. Soonest cooldown expires in ${Math.round(waitMs / 1000)}s (${soonest.candidate.accountEmail || soonest.candidate.name}). Waiting for relief...`);
+        await new Promise<void>((resolve) => {
+          let timer: NodeJS.Timeout | null = null;
+          const onClose = () => {
+            if (timer) clearTimeout(timer);
+            resolve();
+          };
+          timer = setTimeout(() => {
+            if (typeof res?.removeListener === 'function') res.removeListener('close', onClose);
+            resolve();
+          }, waitMs);
+          if (typeof res?.once === 'function') res.once('close', onClose);
+        });
+        if (!res.writableEnded && !res.destroyed && Boolean(res.socket && !res.socket.destroyed)) {
+          return executeGoogleCloudCodeWithPool(req, res, reqJson, accountPool, isSessionRemote, convId, sessId, attemptedModels, fallbackDepth + 1);
+        }
       }
     }
   }

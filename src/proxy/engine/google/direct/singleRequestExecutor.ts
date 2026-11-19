@@ -105,11 +105,6 @@ export function executeGoogleCloudCodeRequest(
       };
 
       proxyReq = https.request(parsedUrl, options, (proxyRes) => {
-        if (responseClaimer) {
-          responseClaimer.registerAbort(traceId, () => {
-            try { proxyReq?.destroy(); } catch (_) {}
-          });
-        }
         proxyReq?.setTimeout(0);
 
         const status = proxyRes.statusCode || 200;
@@ -141,6 +136,14 @@ export function executeGoogleCloudCodeRequest(
           handleBufferedCloudCodeResponse(proxyRes, res, req, status, finish);
         } else if (isGeneration) {
           if (isStream) {
+            if (responseClaimer) {
+              if (!responseClaimer.claim(traceId)) {
+                try { proxyReq?.destroy(); } catch (_) {}
+                finish({ success: false, statusCode: 499, error: 'Cancelled by winning hedged request' });
+                return;
+              }
+              responseClaimer.abortOthers(traceId);
+            }
             transformGoogleStreamForRemote(proxyRes, res, convId, isRemoteSession, modelName, startTime);
             finish({ success: true, statusCode: status });
           } else {
@@ -206,6 +209,12 @@ export function executeGoogleCloudCodeRequest(
         const ms = endTimer();
         metricObserve('proxy_upstream_ms', ms, { upstream: targetHost, trace_id: traceId });
       });
+
+      if (responseClaimer) {
+        responseClaimer.registerAbort(traceId, () => {
+          try { proxyReq?.destroy(); } catch (_) {}
+        });
+      }
 
       let effectiveTimeout: number;
       if (typeof timeoutMs === 'number' && timeoutMs > 0) {

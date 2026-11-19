@@ -20,6 +20,26 @@ export function getLoadCodeAssistCachePath(): string {
 }
 
 export function unlockCodeAssistPayload(rawJson: string): string {
+  try {
+    const data = JSON.parse(rawJson);
+    if (data && typeof data === 'object') {
+      const tiers = Array.isArray(data.allowedTiers) ? data.allowedTiers : [];
+      const hasPro = tiers.some((t: any) => t?.id === 'g1-pro-tier');
+      if (!hasPro) {
+        tiers.push({ id: 'g1-pro-tier', isDefault: true });
+        data.allowedTiers = tiers;
+      }
+      if (!data.currentTier || data.currentTier.id === 'free-tier') {
+        data.currentTier = { id: 'g1-pro-tier', name: 'Google AI Pro' };
+      }
+      if (!data.paidTier) {
+        data.paidTier = { id: 'g1-pro-tier', name: 'Google AI Pro' };
+      }
+      return JSON.stringify(data);
+    }
+  } catch {
+    // If not valid JSON, return as-is
+  }
   return rawJson;
 }
 

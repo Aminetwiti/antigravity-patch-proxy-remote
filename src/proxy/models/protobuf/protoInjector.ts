@@ -34,7 +34,7 @@ export function isModelOrLabelDisabled(idStr?: string, labelStr?: string, disabl
   const rawLabel = (labelStr || '').trim().toLowerCase();
   const cleanLabel = (labelStr || '')
     .replace(/^⭐\s*/, '')
-    .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+    .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
     .replace(/\s*\([^)]*\)\s*$/, '')
     .trim()
     .toLowerCase();
@@ -163,7 +163,7 @@ function extractExistingModelKeys(msgBody: Buffer, modelTag: number): {
         ) {
           const norm = labelStr
             .replace(/^⭐\s*/, '')
-            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
             .trim()
             .toLowerCase();
           if (norm) placeholderNames.add(norm);
@@ -256,13 +256,12 @@ export function injectCustomModelsIntoResponse(
 
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
-        ? m.displayName.trim().toLowerCase()
-        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
       const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const isPoolModel = (m.displayName || '').startsWith('[Pool]') || m.name.includes(':auto-pool');
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
@@ -270,7 +269,9 @@ export function injectCustomModelsIntoResponse(
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
-                : (rawName || 'gemini-3.8-flash-tiered')))
+                : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
+                    : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
       const modelDedupKey = isGoogleFamily
@@ -420,14 +421,35 @@ function injectCustomModelsIntoUserStatusJson(
       const modelId = String(c.modelId || c.modelOrAlias?.model || '').trim();
       const labelLower = label.toLowerCase();
       const idLower = modelId.toLowerCase();
+      // Ne marquer Unavailable QUE les modèles natifs officiels de Google (pas les modèles personnalisés injectés)
+      const isCustomInjected =
+        idLower.includes('model_placeholder_') ||
+        idLower.startsWith('custom-') ||
+        label.includes('🟣') ||
+        label.includes('◆') ||
+        label.includes('[Pool]') ||
+        (customModels || []).some(
+          (cm) =>
+            (cm.name && idLower === cm.name.toLowerCase()) ||
+            (cm.displayName && labelLower === cm.displayName.toLowerCase()) ||
+            (cm.externalModelName && idLower === cm.externalModelName.toLowerCase().replace(/^models\//, ''))
+        );
       if (
-        labelLower.includes('carbon') || idLower.includes('carbon') ||
-        labelLower.includes('argon') || idLower.includes('argon') ||
-        labelLower.includes('hydrogen') || idLower.includes('hydrogen')
+        !isCustomInjected &&
+        (labelLower.includes('carbon') || idLower.includes('carbon') ||
+         labelLower.includes('argon') || idLower.includes('argon') ||
+         ((labelLower.includes('hydrogen') || idLower.includes('hydrogen')) && !labelLower.includes('sonar') && !idLower.includes('sonar')))
       ) {
         c.tagTitle = 'Unavailable';
         c.tagDescription = 'Unavailable';
         c.disabled = true;
+      } else if (isCustomInjected) {
+        delete c.disabled;
+        delete c.tagTitle;
+        delete c.tagDescription;
+        if (!c.quotaInfo) {
+          c.quotaInfo = { remainingFraction: 1, resetTime: '2099-01-01T00:00:00Z' };
+        }
       }
       // Native models are preserved intact
       const isObsolete = false;
@@ -457,7 +479,7 @@ function injectCustomModelsIntoUserStatusJson(
         ) {
           const norm = label
             .replace(/^⭐\s*/, '')
-            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+            .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
             .trim()
             .toLowerCase();
           if (norm) existingPlaceholderNames.add(norm);
@@ -486,13 +508,12 @@ function injectCustomModelsIntoUserStatusJson(
 
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
-        ? m.displayName.trim().toLowerCase()
-        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
       const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const isPoolModel = (m.displayName || '').startsWith('[Pool]') || m.name.includes(':auto-pool');
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
@@ -500,7 +521,9 @@ function injectCustomModelsIntoUserStatusJson(
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
-                : (rawName || 'gemini-3.8-flash-tiered')))
+                : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
+                    : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
       const modelDedupKey = isGoogleFamily
@@ -547,7 +570,7 @@ function injectCustomModelsIntoUserStatusJson(
           'g1-ultra-tier',
           'ultra-tier',
         ],
-        tagTitle: m.provider ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : 'Custom',
+        tagTitle: (m.provider && m.provider !== 'google' && m.provider !== 'google-gemini') ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : undefined,
         quotaInfo: {
           remainingFraction: 1,
           resetTime: '2099-01-01T00:00:00Z',
@@ -686,7 +709,7 @@ export function injectCustomModelsIntoUserStatus(
           ) {
             const norm = label
               .replace(/^⭐\s*/, '')
-              .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*/i, '')
+              .replace(/^[🟢🟡🔴🟣]\s*(\[[^\]]+\])?\s*(\d+ms)?\s*[•|◆]?\s*(\[[^\]]+\])?\s*/i, '')
               .trim()
               .toLowerCase();
             if (norm) existingPlaceholderNames.add(norm);
@@ -703,13 +726,12 @@ export function injectCustomModelsIntoUserStatus(
     const seenModelKeys = new Set<string>();
     for (const m of expandedModels) {
       if (m._poolOnly) continue;
-      const cleanDisp = (m.displayName || '').startsWith('[Pool]')
-        ? m.displayName.trim().toLowerCase()
-        : (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+      const cleanDisp = (m.displayName || '').replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
       const rawName = (m.externalModelName || m.name || '').replace(/^models\//, '').trim().toLowerCase();
       const effort = m._effortSuffix || '';
 
       const isGoogleFamily = m.provider === 'google' || m.provider === 'google-gemini' || m.provider === 'gemini' || m.provider === 'gemini-cli';
+      const isPoolModel = (m.displayName || '').startsWith('[Pool]') || m.name.includes(':auto-pool');
       const canonicalBase = isGoogleFamily
         ? (rawName.includes('claude') || cleanDisp.includes('claude')
             ? (rawName.includes('opus') || cleanDisp.includes('opus')
@@ -717,7 +739,9 @@ export function injectCustomModelsIntoUserStatus(
                 : (rawName.includes('5-5') || rawName.includes('5.5') || cleanDisp.includes('5.5') ? 'claude-sonnet-5-5' : 'claude-sonnet-4-6'))
             : (rawName.includes('argon') || cleanDisp.includes('argon')
                 ? 'gemini-4-argon-medium'
-                : (rawName || 'gemini-3.8-flash-tiered')))
+                : (rawName.includes('hydrogen') || cleanDisp.includes('hydrogen')
+                    ? (rawName.includes('sonar') || cleanDisp.includes('sonar') ? 'gemini-4-hydrogen-sonar' : 'gemini-4-hydrogen')
+                    : (rawName || cleanDisp || 'gemini-3.8-flash-tiered'))))
         : rawName;
 
       const modelDedupKey = isGoogleFamily

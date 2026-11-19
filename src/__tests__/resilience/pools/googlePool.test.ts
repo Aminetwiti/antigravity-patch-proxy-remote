@@ -13,6 +13,7 @@ import {
   getAccountCooldownRemaining,
   clearAccountCooldown,
   _resetAllAccountCooldowns,
+  googleAccountCooldowns,
   isAccountInProbation,
   endAccountProbation,
   _resetAccountProbation,
@@ -918,6 +919,31 @@ describe('Burst Rate Limit Governor & Constants', () => {
       expect(lastOutput).toContain('dashboard.dart');
     });
 
+    it('detectAndMitigateToolLoops compacts output for severe loops (>= 5 reads of same file or >= 4 consecutive calls)', () => {
+      const largeOutput = 'A'.repeat(5000);
+      const contents = [
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/loop.dart' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '1' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/loop.dart' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '2' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/loop.dart' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '3' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/loop.dart' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: '4' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'read_file', args: { Path: 'C:/app/loop.dart' } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_file', response: { output: largeOutput } } }] },
+      ];
+
+      const injected = detectAndMitigateToolLoops(contents);
+      expect(injected).toBe(true);
+      const lastTurn = contents[contents.length - 1] as any;
+      const lastOutput = lastTurn.parts[0].functionResponse.response.output;
+      expect(lastOutput).toContain('[System Guardrail: Redundant repeated inspection suppressed');
+      expect(lastOutput).toContain("file 'c:/app/loop.dart' inspected 5x");
+      // Output must be truncated to prevent context bloat
+      expect(lastOutput.length).toBeLessThan(400);
+    });
+
     it('correctly identifies trial accounts and filters them out for Argon and Claude 5.5 in selectCandidateP2C', () => {
       const trialAcc = makeModel({
         accountEmail: 'student-trial@example.com',
@@ -1090,6 +1116,92 @@ describe('Burst Rate Limit Governor & Constants', () => {
       expect(() => clearAccountQuotaExhaustedFromDisk(undefined)).not.toThrow();
       expect(() => clearAccountQuotaExhaustedFromDisk('')).not.toThrow();
       expect(() => clearAccountQuotaExhaustedFromDisk('nonexistent@example.com')).not.toThrow();
+    });
+
+    describe('Adversarial Red Team: 403 Quarantine & Isolation Hardening (AUDIT-001 & AUDIT-003)', () => {
+      it('AUDIT-003: clearAccountCooldown with family parameter preserves root account cooldown', () => {
+        _resetAllAccountCooldowns();
+        const acc = makeModel({ accountEmail: 'isolate-family@example.com' });
+        // Set both a root cooldown and a gemini family cooldown
+        setAccountCooldown(acc, 10 * 60_000);
+        setAccountCooldown(acc, 10 * 60_000, 'gemini');
+
+        expect(isAccountInCooldown(acc)).toBe(true);
+        expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+        // Clearing ONLY gemini must NOT clear the root account cooldown!
+        clearAccountCooldown(acc, 'gemini');
+        expect(isAccountInCooldown(acc, 'gemini')).toBe(true); // Still true because root cooldown is active!
+        expect(isAccountInCooldown(acc)).toBe(true);
+
+        // Now clear root account without family parameter
+        clearAccountCooldown(acc);
+        expect(isAccountInCooldown(acc)).toBe(false);
+      });
+
+      it('AUDIT-001: 403 quarantine is NOT prematurely woken up by verifyAndReconcileCooldowns even with 100% quota', () => {
+        _resetAllAccountCooldowns();
+        _clearLiveQuotasForTests();
+        const testEmail = 'quarantine-403@example.com';
+        const key = `google:${testEmail}`;
+        const acc = makeModel({
+          accountEmail: testEmail,
+          quotas: {
+            geminiFiveHourPct: 100,
+            geminiWeeklyPct: 100,
+            fiveHourPercentage: 100,
+            weeklyPercentage: 100,
+            updatedAt: Date.now(),
+          } as any,
+        });
+
+        // Set 403 quarantine for 1 hour on gemini family
+        setAccountCooldown(acc, 3600_000, 'gemini', false, true);
+        expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+        // Run reconciler — should NOT wake up the 403 quarantined account
+        const res = verifyAndReconcileCooldowns(Date.now(), [acc]);
+        expect(res.cleared).toBe(0);
+        expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+        // autoHeal should also refuse to clear it
+        autoHealAccountOnQuotaRecovery(key, acc.quotas as any);
+        expect(isAccountInCooldown(acc, 'gemini')).toBe(true);
+
+        _resetAllAccountCooldowns();
+        _clearLiveQuotasForTests();
+      });
+
+      it('AUDIT-002: verifyAndReconcileCooldowns decouples a :sonar cooldown without creating nested :sonar:claude or :sonar:gemini keys', () => {
+        _resetAllAccountCooldowns();
+        _clearLiveQuotasForTests();
+        const testEmail = 'sonar-decouple@example.com';
+        const key = `google:${testEmail}`;
+        const sonarKey = `${key}:sonar`;
+        const acc = makeModel({
+          accountEmail: testEmail,
+          quotas: {
+            geminiFiveHourPct: 0,
+            geminiWeeklyPct: 100,
+            claudeFiveHourPct: 100,
+            claudeWeeklyPct: 100,
+            fiveHourPercentage: 50,
+            weeklyPercentage: 100,
+            updatedAt: Date.now(),
+          } as any,
+        });
+
+        googleAccountCooldowns.set(sonarKey, Date.now() + 3600_000);
+        expect(googleAccountCooldowns.has(sonarKey)).toBe(true);
+
+        verifyAndReconcileCooldowns(Date.now(), [acc]);
+
+        expect(googleAccountCooldowns.has(`${key}:sonar:claude`)).toBe(false);
+        expect(googleAccountCooldowns.has(`${key}:sonar:gemini`)).toBe(false);
+
+        _resetAllAccountCooldowns();
+        _clearLiveQuotasForTests();
+      });
     });
   });
 });

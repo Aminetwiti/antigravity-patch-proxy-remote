@@ -1,4 +1,4 @@
-﻿import log from 'electron-log';
+import log from 'electron-log';
 import type { CustomModel, GeminiRequestBody } from '../../../../core/types';
 import type { FallbackParams } from './types';
 import { isGoogleCloudCodeModel } from '../../../../../services/auth/googleAuth';
@@ -6,11 +6,25 @@ import { getOpenBreaker } from '../../../../resilience/circuit/circuitBreaker';
 import { isProviderRateLimited } from '../../../../models/catalog/modelRouter';
 import { writeSafeSseChunk } from '../../../stream/streamPipeline';
 import { safeWriteHead } from '../../../../http/server/httpUtils';
+import { flattenAllToolCallsToText } from '../../../../core/shared';
 import {
   getSessionModelFallback,
   setSessionModelFallback,
 } from '../../../../resilience/pools/sessionAffinities';
-import { handleCustomModelRequest } from '../../../executors/customModelEngine';
+
+type HandleCustomModelRequestFn = (typeof import('../../../executors/customModelEngine'))['handleCustomModelRequest'];
+let cachedHandleCustomModelRequest: HandleCustomModelRequestFn | null = null;
+
+function getCustomModelHandler(): HandleCustomModelRequestFn {
+  if (!cachedHandleCustomModelRequest) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('../../../executors/customModelEngine') as {
+      handleCustomModelRequest: HandleCustomModelRequestFn;
+    };
+    cachedHandleCustomModelRequest = mod.handleCustomModelRequest;
+  }
+  return cachedHandleCustomModelRequest;
+}
 
 export async function attemptExternalCascade(
   params: FallbackParams,
@@ -69,7 +83,27 @@ export async function attemptExternalCascade(
       }
 
       try {
-        handleCustomModelRequest(res, fallbackModel, actualGeminiBody, isStream);
+        let targetBody = actualGeminiBody;
+        if (isAiStudio && targetBody) {
+          try {
+            const cloned = JSON.parse(JSON.stringify(targetBody));
+            if (cloned.generationConfig) {
+              delete cloned.generationConfig.thinkingConfig;
+              delete cloned.generationConfig.thinking_config;
+            }
+            if (cloned.generation_config) {
+              delete cloned.generation_config.thinkingConfig;
+              delete cloned.generation_config.thinking_config;
+            }
+            const contents = cloned.contents || cloned.request?.contents;
+            if (Array.isArray(contents)) {
+              flattenAllToolCallsToText(contents);
+            }
+            targetBody = cloned;
+          } catch (_) {}
+        }
+        const handler = getCustomModelHandler();
+        handler(res, fallbackModel, targetBody, isStream);
         if (sessionKey && fi === 0) {
           setSessionModelFallback(sessionKey, currentBase, fallbackModel.displayName || fallbackModel.name, true);
         }

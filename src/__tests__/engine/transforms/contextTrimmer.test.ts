@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { trimContextPayload } from '../../../proxy/engine/transforms/contextTrimmer';
 import type { GeminiRequestBody } from '../../../proxy/core/types';
 
@@ -245,5 +245,22 @@ describe('ContextTrimmer (AUDIT-002 Regression & Collision Prevention)', () => {
     const trimmed = trimContextPayload(body);
     expect(trimmed.request?.contents?.[0].parts[0].text).toContain('Previous step encountered a network timeout');
     expect(trimmed.request?.contents?.[0].parts[0].text).not.toContain('coupure amont détectée');
+  });
+
+  it('preserves user prompt intact even if it mentions proxy error keywords (AUDIT-01)', () => {
+    const userLogPrompt = 'Google pool request timed out waiting for response headers on daily-cloudcode-pa.googleapis.com after 85s\n/audit-adversarial';
+    const body: GeminiRequestBody = {
+      request: {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: userLogPrompt }],
+          },
+        ],
+      },
+    };
+
+    const trimmed = trimContextPayload(body);
+    expect(trimmed.request?.contents?.[0].parts[0].text).toBe(userLogPrompt);
   });
 });

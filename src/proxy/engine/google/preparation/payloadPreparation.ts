@@ -102,7 +102,8 @@ export function resolveTargetModelName(
   }
 
   const isClaude = resolvedTarget.includes('claude');
-  const modelFamily = isClaude ? 'claude' : 'gemini';
+  const isSonar = resolvedTarget.includes('sonar');
+  const modelFamily = isClaude ? 'claude' : (isSonar ? 'sonar' : 'gemini');
 
   return { targetRaw, resolvedTarget, modelFamily };
 }

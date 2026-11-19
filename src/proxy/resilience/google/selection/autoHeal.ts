@@ -9,6 +9,7 @@ import {
   accountProbationUntil,
   quotaExhaustedAccountKeys,
   rateLimitedCooldownKeys,
+  quarantinedAccountKeys,
 } from '../cooldown/cooldownState';
 
 export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: AccountLiveQuota): void {
@@ -20,7 +21,19 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
   const normAccountKey = accountKey.startsWith('google:') ? accountKey : `google:${accountKey}`;
   const rawAccountKey = accountKey.replace(/^google:/, '');
 
-  if (quota.geminiFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT || quota.claudeFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT) {
+  const isAccountWideQuarantined =
+    quarantinedAccountKeys.has(normAccountKey) ||
+    quarantinedAccountKeys.has(rawAccountKey);
+  const isGeminiQuarantined =
+    isAccountWideQuarantined ||
+    quarantinedAccountKeys.has(`${normAccountKey}:gemini`) ||
+    quarantinedAccountKeys.has(`${rawAccountKey}:gemini`);
+  const isClaudeQuarantined =
+    isAccountWideQuarantined ||
+    quarantinedAccountKeys.has(`${normAccountKey}:claude`) ||
+    quarantinedAccountKeys.has(`${rawAccountKey}:claude`);
+
+  if (!isAccountWideQuarantined && (quota.geminiFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT || quota.claudeFiveHourPct >= PREVENTIVE_QUOTA_THRESHOLD_PCT)) {
     unmarkAccountUnlicensed(accountKey);
   }
 
@@ -91,10 +104,16 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
     geminiWeeklyDepleted = (typeof quota.geminiWeeklyPct === 'number' && quota.geminiWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiWeeklyResetPassed) ||
                            (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !geminiWeeklyResetPassed);
 
+    const isGeminiExhaustionCleared =
+      !isGeminiQuotaExhausted ||
+      (isStrictCooldown ? geminiWeeklyResetPassed : (geminiResetPassed || remaining <= 0));
+
     const canHealGemini =
+      !isGeminiQuarantined &&
       !isRateLimited &&
       (!isStrictCooldown || geminiWeeklyResetPassed) &&
-      (!isGeminiQuotaExhausted || quota.geminiFiveHourPct >= 5 || (isStrictCooldown ? geminiWeeklyResetPassed : geminiResetPassed)) &&
+      isGeminiExhaustionCleared &&
+      quota.geminiFiveHourPct >= 5 &&
       !geminiWeeklyDepleted &&
       hasAnyCooldown;
 
@@ -187,10 +206,16 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
     claudeWeeklyDepleted = (typeof quota.claudeWeeklyPct === 'number' && quota.claudeWeeklyPct < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeWeeklyResetPassed) ||
                            (typeof quota.weeklyPercentage === 'number' && quota.weeklyPercentage < PREVENTIVE_QUOTA_THRESHOLD_PCT && !claudeWeeklyResetPassed);
 
+    const isClaudeExhaustionCleared =
+      !isClaudeQuotaExhausted ||
+      (isStrictCooldown ? claudeWeeklyResetPassed : (claudeResetPassed || remaining <= 0));
+
     const canHealClaude =
+      !isClaudeQuarantined &&
       !isRateLimited &&
       (!isStrictCooldown || claudeWeeklyResetPassed) &&
-      (!isClaudeQuotaExhausted || quota.claudeFiveHourPct >= 5 || (isStrictCooldown ? claudeWeeklyResetPassed : claudeResetPassed)) &&
+      isClaudeExhaustionCleared &&
+      quota.claudeFiveHourPct >= 5 &&
       !claudeWeeklyDepleted &&
       hasAnyCooldown;
 
@@ -248,6 +273,10 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
   if (quota.geminiFiveHourPct >= 5 || quota.claudeFiveHourPct >= 5) {
     const remaining = getGeneralCooldownRemaining();
     const isStrictCooldown = remaining > FIVE_HOURS_MS;
+    const isGeneralRateLimited = (remaining > 0) && (
+      rateLimitedCooldownKeys.has(normAccountKey) ||
+      rateLimitedCooldownKeys.has(rawAccountKey)
+    );
 
     const hasAnyCooldown =
       googleAccountCooldowns.has(normAccountKey) ||
@@ -255,7 +284,7 @@ export function autoHealAccountOnQuotaRecovery(accountKey: string, quota: Accoun
       quotaExhaustedAccountKeys.has(normAccountKey) ||
       quotaExhaustedAccountKeys.has(rawAccountKey);
 
-    if (!isStrictCooldown && !geminiWeeklyDepleted && !claudeWeeklyDepleted && hasAnyCooldown) {
+    if (!isAccountWideQuarantined && !isGeneralRateLimited && !isStrictCooldown && !geminiWeeklyDepleted && !claudeWeeklyDepleted && hasAnyCooldown) {
       log.info(`[Proxy] Auto-healing general cooldown for ${accountKey}`);
       googleAccountCooldowns.delete(normAccountKey);
       googleAccountCooldowns.delete(rawAccountKey);

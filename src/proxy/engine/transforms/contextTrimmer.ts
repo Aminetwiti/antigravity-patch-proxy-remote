@@ -32,6 +32,7 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
   let totalPartsBefore = 0;
   let totalPartsAfter = 0;
   let compactedBytesTotal = 0;
+  let sanitizedCardsTotal = 0;
 
   const seenHashes = new Set<string>();
 
@@ -59,12 +60,13 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
     const compactedParts = content.parts.map((part) => {
       // Strip synthetic proxy error/warning cards that were saved into session history by previous failures
       if (
+        content.role === 'model' &&
         part.text &&
         SYNTHETIC_PROXY_ERROR_PATTERN.test(part.text) &&
         !part.functionCall &&
         !part.functionResponse
       ) {
-        log.info('[ContextTrimmer] Sanitized synthetic error warning card from turn');
+        sanitizedCardsTotal++;
         return {
           ...part,
           text: '[Previous step encountered a network timeout. Resuming task...]',
@@ -166,6 +168,10 @@ export function trimContextPayload(body: GeminiRequestBody): GeminiRequestBody {
       parts: safeParts,
     };
   });
+
+  if (sanitizedCardsTotal > 0) {
+    log.info(`[ContextTrimmer] Sanitized ${sanitizedCardsTotal} synthetic error warning card(s) from history`);
+  }
 
   if (totalPartsBefore > totalPartsAfter || compactedBytesTotal > 0) {
     const partsDiff = totalPartsBefore - totalPartsAfter;

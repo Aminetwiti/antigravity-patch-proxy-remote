@@ -70,7 +70,7 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
 
   let dynamicAdaptiveTimeout: number;
   if (updatedBody.length > 150_000) {
-    dynamicAdaptiveTimeout = 85_000;
+    dynamicAdaptiveTimeout = 70_000;
   } else if (updatedBody.length > 60_000 || isThinkingModel) {
     dynamicAdaptiveTimeout = 60_000;
   } else if (isContextualPayload || updatedBody.length > 25_000) {
@@ -95,14 +95,16 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
     isFlashModel
       ? hasOtherCandidates && healthySiblingAccountsCount >= 1
         ? isThinkingModel
-          ? Math.max(55_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)
+          ? Math.min(60_000, Math.max(50_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS))
           : 45_000
         : isThinkingModel
         ? updatedBody.length > 100_000
-          ? 80_000
+          ? 70_000
           : 65_000
         : 55_000
-      : 85_000,
+      : (hasOtherCandidates && healthySiblingAccountsCount >= 1
+          ? Math.min(healthySiblingAccountsCount >= 2 ? 45_000 : 60_000, GOOGLE_POOL_HEADER_TIMEOUT_LARGE_PROMPT_MS)
+          : 70_000),
     GOOGLE_PROXY_TIMEOUT_MS,
   );
 
@@ -117,7 +119,7 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
       ? isLargePayloadOrThinking
         ? largeTimeoutMs
         : flashTimeoutMs
-      : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS)
+      : Math.min(35_000, GOOGLE_PROXY_TIMEOUT_MS)
     : isLargePayloadOrThinking
     ? largeTimeoutMs
     : standardTimeoutMs;
@@ -126,9 +128,9 @@ export function computeCandidateHeaderTimeout(params: TimeoutCalculationParams):
     ? baseCandidateTimeout
     : isFlashModel
     ? isLargePayloadOrThinking
-      ? 60_000
+      ? 35_000
       : flashTimeoutMs
-    : Math.min(65_000, GOOGLE_PROXY_TIMEOUT_MS);
+    : Math.min(45_000, GOOGLE_PROXY_TIMEOUT_MS);
 
   if (consecutive504TimeoutCount > 0) {
     const flashEscalation =

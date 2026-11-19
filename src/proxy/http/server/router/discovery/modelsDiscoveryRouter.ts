@@ -143,9 +143,40 @@ export async function handleModelsDiscoveryRoute(
               const mDisp = String(mEntry.displayName || '');
               const mTag = String(mEntry.tagTitle || '');
               const mDesc = String(mEntry.tagDescription || '');
+              const mIdLower = mId.toLowerCase();
+              const mDispLower = mDisp.toLowerCase();
+              const isCustomModel =
+                mIdLower.startsWith('custom-') ||
+                mIdLower.includes('model_placeholder_') ||
+                mDisp.includes('🟣') ||
+                mDisp.includes('◆') ||
+                (customModels || []).some(
+                  (cm) =>
+                    (cm.name && mIdLower === cm.name.toLowerCase()) ||
+                    (cm.displayName && mDispLower === cm.displayName.toLowerCase()) ||
+                    (cm.externalModelName && mIdLower === cm.externalModelName.toLowerCase().replace(/^models\//, ''))
+                );
+              // Preserve native Carbon, Argon, and Hydrogen as Unavailable / disabled
               if (
-                mId.toLowerCase().includes('argon') ||
-                mDisp.toLowerCase().includes('argon') ||
+                !isCustomModel &&
+                (mIdLower.includes('carbon') || mDispLower.includes('carbon') ||
+                 mIdLower.includes('argon') || mDispLower.includes('argon') ||
+                 ((mIdLower.includes('hydrogen') || mDispLower.includes('hydrogen')) && !mIdLower.includes('sonar') && !mDispLower.includes('sonar')))
+              ) {
+                mEntry.disabled = true;
+                mEntry.tagTitle = 'Unavailable';
+                mEntry.tagDescription = 'Unavailable';
+                continue;
+              }
+              if (isCustomModel) {
+                delete mEntry.disabled;
+                delete mEntry.tagTitle;
+                delete mEntry.tagDescription;
+                if (!mEntry.quotaInfo) {
+                  mEntry.quotaInfo = { remainingFraction: 1, resetTime: '2099-01-01T00:00:00Z' };
+                }
+              }
+              if (
                 mTag.toLowerCase().includes('unavailable') ||
                 mDesc.toLowerCase().includes('ultra') ||
                 mEntry.disabled === true

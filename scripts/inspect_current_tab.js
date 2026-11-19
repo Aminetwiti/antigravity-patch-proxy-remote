@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const WebSocket = require('ws');
 
-const SCREENSHOT_DIR = path.join(__dirname, '..', '..', '..', '.gemini', 'antigravity-ide', 'brain', '3e9f6861-dc8a-41e3-8873-7855a12314e0', 'screenshots');
+const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || path.join(__dirname, '..', 'screenshots');
 if (!fs.existsSync(SCREENSHOT_DIR)) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }

@@ -4,6 +4,7 @@ import {
   detectModelCapabilitiesByName,
   detectModelUXBadges,
   extractModelNameFromPayload,
+  matchesCustomModel,
 } from '../../../proxy/models/catalog/modelUtils';
 
 
@@ -207,5 +208,24 @@ describe('extractModelNameFromPayload', () => {
     expect(extractModelNameFromPayload(Buffer.from('{ broken json'))).toBe('');
   });
 });
+
+describe('matchesCustomModel resilience', () => {
+  it('safely handles empty, null, and undefined model objects without throwing', () => {
+    expect(matchesCustomModel(null as any, 'some-candidate')).toBe(false);
+    expect(matchesCustomModel(undefined as any, 'some-candidate')).toBe(false);
+    expect(matchesCustomModel({} as any, 'some-candidate')).toBe(false);
+    expect(matchesCustomModel({ name: undefined } as any, 'some-candidate')).toBe(false);
+    expect(matchesCustomModel({ name: null } as any, 'some-candidate')).toBe(false);
+  });
+
+  it('safely handles invalid candidate names', () => {
+    const dummyModel = { name: 'models/my-custom-model', provider: 'openai' } as any;
+    expect(matchesCustomModel(dummyModel, null as any)).toBe(false);
+    expect(matchesCustomModel(dummyModel, undefined as any)).toBe(false);
+    expect(matchesCustomModel(dummyModel, '' as any)).toBe(false);
+    expect(matchesCustomModel(dummyModel, 123 as any)).toBe(false);
+  });
+});
+
 
 

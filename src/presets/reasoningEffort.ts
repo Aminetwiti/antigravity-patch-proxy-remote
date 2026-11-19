@@ -154,7 +154,7 @@ export function isReasoningLikeModel(modelName: string): boolean {
   if (!modelName || typeof modelName !== 'string') {
     return false;
   }
-  return /(o1|o3|r1|reasoning|reasoner|thinking|claude-4|opus|sonnet|gemini-3|gpt-oss)/i.test(
+  return /(o1|o3|r1|reasoning|reasoner|thinking|claude-4|opus|sonnet|gemini-3|gpt-oss|sonar)/i.test(
     modelName,
   );
 }

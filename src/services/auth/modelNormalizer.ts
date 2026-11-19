@@ -15,6 +15,8 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     'gemini-4-argon-medium',
     'gemini-4-argon-low',
     'gemini-4-argon',
+    'gemini-4-hydrogen',
+    'gemini-4-hydrogen-sonar',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
     'claude-sonnet-5-5',
@@ -26,6 +28,7 @@ export function normalizeCloudCodeModelId(modelId: string): string {
   }
 
   const map: Record<string, string> = {
+    'gemini-4-hydrogen-sonar': 'gemini-3.8-flash-tiered',
     'gemini-4-argon': 'gemini-4-argon-high',
     'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
@@ -66,6 +69,7 @@ export function normalizeCloudCodeModelId(modelId: string): string {
     if (clean.includes('medium')) return 'gemini-4-argon-medium';
     return 'gemini-4-argon-high';
   }
+  if (clean.includes('sonar') || clean.includes('hydrogen')) return 'gemini-3.8-flash-tiered';
   if (clean.includes('flash') || clean.includes('pro')) return 'gemini-3.8-flash-tiered';
   if (clean.includes('gpt')) return 'gemini-3.8-flash-tiered';
 
@@ -86,6 +90,8 @@ export function normalizeGoogleModelId(modelName: string): string {
     'gemini-4-argon-medium',
     'gemini-4-argon-low',
     'gemini-4-argon',
+    'gemini-4-hydrogen',
+    'gemini-4-hydrogen-sonar',
     'claude-sonnet-4-6',
     'claude-opus-4-6-thinking',
     'claude-sonnet-5-5',
@@ -97,6 +103,8 @@ export function normalizeGoogleModelId(modelName: string): string {
   }
 
   const aliasMap: Record<string, string> = {
+    'gemini-4-hydrogen': 'gemini-3.8-flash-tiered',
+    'gemini-4-hydrogen-sonar': 'gemini-3.8-flash-tiered',
     'gemini-4-argon': 'gemini-4-argon-high',
     'gemini-4-argon-high': 'gemini-4-argon-high',
     'gemini-4-argon-medium': 'gemini-4-argon-medium',
@@ -140,6 +148,7 @@ export function normalizeGoogleModelId(modelName: string): string {
     if (clean.includes('medium')) return 'gemini-4-argon-medium';
     return 'gemini-4-argon-high';
   }
+  if (clean.includes('sonar') || clean.includes('hydrogen')) return 'gemini-3.8-flash-tiered';
 
   if (clean.includes('pro') || clean.includes('flash') || clean.includes('gpt')) {
     return 'gemini-3.8-flash-tiered';

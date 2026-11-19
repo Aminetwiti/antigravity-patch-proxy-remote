@@ -101,7 +101,7 @@ import {
   sanitizeCandidatesInResponse,
   writeSafeSseChunk,
 } from '../stream/streamPipeline';
-import { executeGoogleCloudCodeWithPool } from './googleCloudEngine';
+import { executeGoogleCloudCodeWithPool } from '../google/orchestration/loop/poolOrchestrator';
 
 export type { RetryDispatch, StreamRequestCtx };
 
@@ -113,6 +113,21 @@ type RetryDispatch = (
   delayMs: number,
   logReason: string,
 ) => void;
+
+function safeExecuteGoogleCloudCodeWithPool(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reqJson: Record<string, unknown>,
+  accountPool: CustomModel[],
+  isSessionRemote: boolean,
+  convId: string,
+  sessId: string | null,
+): Promise<boolean> {
+  const fn = typeof executeGoogleCloudCodeWithPool === 'function'
+    ? executeGoogleCloudCodeWithPool
+    : (require('../google/orchestration/loop/poolOrchestrator') as typeof import('../google/orchestration/loop/poolOrchestrator')).executeGoogleCloudCodeWithPool;
+  return fn(req, res, reqJson, accountPool, isSessionRemote, convId, sessId);
+}
 
 interface StreamRequestCtx {
   res: http.ServerResponse;
@@ -872,7 +887,7 @@ export function handleCustomModelRequest(
         method: 'POST',
         headers: {},
       } as unknown as http.IncomingMessage;
-      void executeGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', null);
+      void safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', null);
       return;
     }
     log.error(`[Proxy] Cannot route virtual auto-pool or keyless model ${model.name} to translator without valid API key.`);
@@ -976,15 +991,20 @@ export function handleCustomModelRequest(
         }
       } else if (model.fallbackModel) {
         chainItems.push(model.fallbackModel);
-      } else if (model.provider === 'google' && !isGoogleCloudCodeModel(model)) {
+      } else if ((model.provider === 'google' || model.provider === 'google-gemini') && !isGoogleCloudCodeModel(model)) {
         // Intelligent default fallback cascade for Google AI Studio models (e.g. 503 high demand or 429)
         const norm = (model.externalModelName || model.name || '').toLowerCase();
         if (norm.includes('gemini-3.8-flash')) {
           chainItems.push('gemini-3.8-pro');
+        } else if (norm.includes('hydrogen')) {
+          chainItems.push('gemini-3.8-flash-tiered', 'claude-sonnet-4-6');
         }
       }
 
-      const allowCrossModel = process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
+      const isServerOverload = diagnostic.errorType === 'server' && (diagnostic.title?.includes('503') || diagnostic.title?.includes('Capacity'));
+      const isFleetRateLimit = diagnostic.errorType === 'rate_limit' && (diagnostic.title?.includes('Edge IP') || diagnostic.title?.includes('Fleet') || diagnostic.message?.includes('Fleet 429'));
+      const hasExplicitChain = chainItems.length > 0;
+      const allowCrossModel = hasExplicitChain || process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1';
       if (allowCrossModel && (poolSiblings.length > 0 || chainItems.length > 0)) {
         const chainModels: CustomModel[] = [];
         for (const item of chainItems) {
@@ -1005,7 +1025,10 @@ export function handleCustomModelRequest(
           chainModels.push(...matches);
         }
         const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m) && !m.name?.includes(':auto-pool') && m.apiKey !== 'auto');
-        orderedModels = [...poolSiblings, ...chainModels, ...rest];
+        // When server is overloaded with 503 or hit by fleet-wide IP edge 429, prioritize fallback models over same-model siblings to avoid retry storms
+        orderedModels = (isServerOverload || isFleetRateLimit) && chainModels.length > 0
+          ? [...chainModels, ...poolSiblings, ...rest]
+          : [...poolSiblings, ...chainModels, ...rest];
       } else {
         // Strict model locking: only rotate among accounts offering the exact same model!
         orderedModels = poolSiblings;
@@ -1102,7 +1125,7 @@ export function handleCustomModelRequest(
               method: 'POST',
               headers: {},
             } as unknown as http.IncomingMessage;
-            executeGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId);
+            safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId);
             return true;
           }
 

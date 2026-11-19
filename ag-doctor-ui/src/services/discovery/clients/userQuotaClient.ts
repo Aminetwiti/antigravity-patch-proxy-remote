@@ -252,17 +252,18 @@ export async function fetchGoogleAccountQuotas(accessToken: string): Promise<Acc
       }
 
       const effGemini5h = geminiFiveHourPct ?? 100;
-      const effGeminiWk = geminiWeeklyPct ?? 100;
+      const effGeminiWk = (typeof geminiWeeklyPct === 'number' && geminiWeeklyPct < 100) ? geminiWeeklyPct : effGemini5h;
+      const effGeminiWkReset = (typeof geminiWeeklyPct === 'number' && geminiWeeklyPct < 100 && geminiWeeklyReset) ? geminiWeeklyReset : geminiFiveHourReset;
 
       return {
         fiveHourPercentage: effGemini5h,
         fiveHourResetTime: geminiFiveHourReset,
         weeklyPercentage: effGeminiWk,
-        weeklyResetTime: geminiWeeklyReset,
+        weeklyResetTime: effGeminiWkReset,
         geminiFiveHourPct: effGemini5h,
         geminiFiveHourReset,
         geminiWeeklyPct: effGeminiWk,
-        geminiWeeklyReset,
+        geminiWeeklyReset: effGeminiWkReset,
         claudeFiveHourPct: claudeFiveHourPct ?? 100,
         claudeFiveHourReset,
         claudeWeeklyPct: claudeWeeklyPct ?? 100,

@@ -154,11 +154,14 @@ export const P2C_SCORE_DELTA = getEnvInt('AG_P2C_SCORE_DELTA', 45);
 /** Maximum time to wait for a 429 rate-limited account cooldown to expire before failing (default: 65 seconds). */
 export const RATE_LIMIT_RELIEF_WAIT_MS = getEnvInt('AG_RATE_LIMIT_RELIEF_WAIT_MS', 65_000);
 
+/** Maximum single-burst relief wait time (ms) for an account cooldown in pool rotation (default: 15,000ms). Configurable via AG_MAX_RELIEF_WAIT_MS. */
+export const MAX_RELIEF_WAIT_MS = getEnvInt('AG_MAX_RELIEF_WAIT_MS', 15_000);
+
 /** Speculative hedged request delay for streaming pools (default: 2,500ms). If no headers arrive in 2.5s, hedge with next candidate. */
 export const HEDGED_REQUEST_DELAY_MS = getEnvInt('AG_HEDGED_REQUEST_DELAY_MS', 2_500);
 
-/** Speculative hedged request delay for Flash / Thinking models (default: 20,000ms). Prevents premature speculation during upstream TTFT degradation. */
-export const FLASH_HEDGED_DELAY_MS = getEnvInt('AG_FLASH_HEDGED_DELAY_MS', 20_000);
+/** Speculative hedged request delay for Flash / Thinking models (default: 10,000ms). Prevents premature speculation during upstream TTFT degradation while ensuring responsive hedging. */
+export const FLASH_HEDGED_DELAY_MS = getEnvInt('AG_FLASH_HEDGED_DELAY_MS', 10_000);
 
 /** Base jitter delay (ms) applied during account rotation on quota exhaustion / rate limit (default: 0). Prevents WAF failover correlation. */
 export const ROTATION_JITTER_MS = getEnvInt('AG_ROTATION_JITTER_MS', 0);
@@ -535,7 +538,7 @@ export const STANDARD_GOOGLE_MODELS = [
 export function isObsoleteModel(idOrName?: string, displayName?: string): boolean {
   if (!idOrName && !displayName) return false;
   const str = `${idOrName || ''} ${displayName || ''}`.toLowerCase();
-  if (str.includes('argon')) return false;
+  if (str.includes('argon') || str.includes('gpt-oss') || str.includes('gpt_oss') || str.includes('gpt oss') || str.includes('120b')) return false;
 
   // Deprecated Gemini / Google models: 1.x, 2.x, 3.0, 3.1, 3.5, 3.6, 3.7
   if (/(?:gemini|google)[-_.\s]*(?:1\.[05]|2\.[05]|3\.[01567])/i.test(str)) return true;

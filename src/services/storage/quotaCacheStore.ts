@@ -24,6 +24,7 @@ export interface PersistentQuotaCacheData {
   revokedTokens: string[];
   unlicensedAccounts?: string[];
   accountCooldowns?: Record<string, number>;
+  quarantinedAccounts?: string[];
 }
 
 let getUnlicensedAccountsFn: (() => string[]) | null = null;
@@ -35,6 +36,17 @@ export function registerUnlicensedAccountsHandlers(
 ): void {
   getUnlicensedAccountsFn = getFn;
   restoreUnlicensedAccountsFn = restoreFn;
+}
+
+let getQuarantinedAccountsFn: (() => string[]) | null = null;
+let restoreQuarantinedAccountsFn: ((keys: string[]) => void) | null = null;
+
+export function registerQuarantinedAccountsHandlers(
+  getFn: () => string[],
+  restoreFn: (keys: string[]) => void,
+): void {
+  getQuarantinedAccountsFn = getFn;
+  restoreQuarantinedAccountsFn = restoreFn;
 }
 
 let getAccountCooldownsFn: (() => Record<string, number>) | null = null;
@@ -108,6 +120,12 @@ export async function loadPersistentQuotaCache(customPath?: string): Promise<boo
       log.info(`[QuotaCacheStore] Restored ${data.unlicensedAccounts.length} unlicensed account(s) from disk cache`);
     }
 
+    // Restore quarantined accounts (HTTP 403 / policy restrictions)
+    if (Array.isArray(data.quarantinedAccounts) && restoreQuarantinedAccountsFn) {
+      restoreQuarantinedAccountsFn(data.quarantinedAccounts);
+      log.info(`[QuotaCacheStore] Restored ${data.quarantinedAccounts.length} quarantined account(s) from disk cache`);
+    }
+
     // Restore active account cooldowns (HTTP 429)
     // Pass the freshly-loaded quota map so the restore fn can skip quota-exhausted
     // cooldowns for accounts that already have positive remaining quota.
@@ -154,6 +172,7 @@ export async function savePersistentQuotaCache(customPath?: string): Promise<voi
       revokedTokens: getAllRevokedTokens(),
       unlicensedAccounts: getUnlicensedAccountsFn ? getUnlicensedAccountsFn() : [],
       accountCooldowns: getAccountCooldownsFn ? getAccountCooldownsFn() : {},
+      quarantinedAccounts: getQuarantinedAccountsFn ? getQuarantinedAccountsFn() : [],
     };
 
     const tempPath = `${filePath}.tmp.${Date.now()}`;

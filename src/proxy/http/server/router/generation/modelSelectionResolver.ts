@@ -26,7 +26,7 @@ export function resolveCloudCodeCustomModel(
              m.enabled !== false &&
              !(m as any)._poolOnly
     );
-    if (googlePoolCandidates.length > 0 && process.env.AG_POOL_NATIVE_MODELS === '1') {
+    if (googlePoolCandidates.length > 0 && process.env.AG_POOL_NATIVE_MODELS !== '0') {
       const normReq = normalizeCloudCodeModelId(cleanRequested);
       const matchedPool = googlePoolCandidates.filter((m) => {
         const mTarget = (m.externalModelName || m.name || (m as any).id || '').replace(/^models\//, '').toLowerCase();

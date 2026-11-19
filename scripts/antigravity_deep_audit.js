@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 
-const BROWSER_WS = 'ws://localhost:9222/devtools/browser/cf4755f4-c3ac-4b29-91fa-10dc3cc6d88e';
-const ARTIFACTS_DIR = 'C:\\Users\\developer\\.gemini\\antigravity-ide\\brain\\3e9f6861-dc8a-41e3-8873-7855a12314e0';
+const BROWSER_WS = process.env.BROWSER_WS || 'ws://localhost:9222/devtools/browser';
+const ARTIFACTS_DIR = process.env.ARTIFACTS_DIR || path.join(__dirname, '..', 'artifacts');
 const SCREENSHOT_DIR = path.join(ARTIFACTS_DIR, 'screenshots');
 const AUDIT_DATA_DIR = path.join(ARTIFACTS_DIR, 'audit_data');
 

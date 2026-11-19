@@ -60,7 +60,7 @@ describe('ProxyManager', () => {
     it('resolves true when socket connects successfully', async () => {
       const mgr = new ProxyManager({ port: 9999, host: '127.0.0.1' });
 
-      vi.spyOn(net, 'Socket').mockImplementation(() => {
+      vi.spyOn(net, 'Socket').mockImplementation(function (this: any) {
         const handlers: Record<string, () => void> = {};
         return {
           connect: vi.fn(() => {
@@ -71,7 +71,7 @@ describe('ProxyManager', () => {
           }),
           destroy: vi.fn(),
         } as unknown as net.Socket;
-      });
+      } as any);
 
       const listening = await mgr.isListening();
       expect(listening).toBe(true);
@@ -80,7 +80,7 @@ describe('ProxyManager', () => {
     it('resolves false when socket emits connection error', async () => {
       const mgr = new ProxyManager({ port: 9999, host: '127.0.0.1' });
 
-      vi.spyOn(net, 'Socket').mockImplementation(() => {
+      vi.spyOn(net, 'Socket').mockImplementation(function (this: any) {
         const handlers: Record<string, (err?: any) => void> = {};
         return {
           connect: vi.fn(() => {
@@ -91,7 +91,7 @@ describe('ProxyManager', () => {
           }),
           destroy: vi.fn(),
         } as unknown as net.Socket;
-      });
+      } as any);
 
       const listening = await mgr.isListening();
       expect(listening).toBe(false);

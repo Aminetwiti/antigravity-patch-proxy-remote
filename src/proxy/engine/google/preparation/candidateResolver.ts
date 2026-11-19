@@ -66,6 +66,17 @@ export function filterAndPrioritizeEligibleAccounts(
       ? activePool
       : accountPool.filter((a) => (a as any).enabled !== false && !isAccountUnlicensed(a));
 
+  if (modelFamily === 'claude') {
+    const claudeCapable = eligibleAccounts.filter((a) => {
+      const qKey = getAccountQuotaKey(a);
+      const liveQ = (getLiveAccountQuota(qKey) || a.quotas) as Record<string, any> | undefined;
+      const claudeFraction = liveQ?.claude?.remainingFraction ?? liveQ?.claudeQuota;
+      if (claudeFraction !== undefined && claudeFraction <= 0) return false;
+      return !isAccountInCooldown(a, 'claude') && getModelQuotaScore(a, 'claude') > 0;
+    });
+    eligibleAccounts = claudeCapable;
+  }
+
   if (isClaude55) {
     const candidates55 = eligibleAccounts.filter((a) => isAccountEntitledToClaude55(a));
     const otherCandidates = eligibleAccounts.filter((a) => !isAccountEntitledToClaude55(a));
