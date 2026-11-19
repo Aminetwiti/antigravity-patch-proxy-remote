@@ -7,6 +7,7 @@ import { processOutcome429 } from '../../../proxy/engine/google/orchestration/ou
 import {
   getFleetModelCooldown,
   clearFleetModelCooldown,
+  getAccountCooldownRemaining,
 } from '../../../proxy/resilience/google/cooldown/cooldownRegistry';
 
 vi.mock('electron', () => ({
@@ -207,5 +208,51 @@ describe('Fleet Circuit Breaker & Large Pool Resilience', () => {
     expect(getFleetModelCooldown('gemini-3.8-flash-tiered').active).toBe(true);
     clearFleetModelCooldown('gemini-3.8-flash-tiered');
     expect(getFleetModelCooldown('gemini-3.8-flash-tiered').active).toBe(false);
+  });
+
+  it('disarms hedged dispatch when fleet cooldown is active for target model or family', async () => {
+    const { setFleetModelCooldown } = await import('../../../proxy/resilience/google/cooldown/cooldownRegistry');
+    setFleetModelCooldown('gemini-3.8-flash-tiered', 30_000, 'Fleet 429 burst test');
+    expect(getFleetModelCooldown('gemini-3.8-flash-tiered').active).toBe(true);
+    
+    // Also verify family cooldown is properly registered
+    setFleetModelCooldown('gemini-flash', 25_000, 'Fleet family cooldown');
+    expect(getFleetModelCooldown('gemini-flash').active).toBe(true);
+  });
+
+  it('applies rolling 5h cooldown and does NOT lock out for 147h when weekly reset is 147h and weekly quota is healthy', async () => {
+    const fleet = createMockAccounts(2);
+    const state = createInitialPoolLoopState();
+    const res = createMockResponse();
+
+    const weeklyMentionOutcome: GoogleRequestOutcome = {
+      status: 429,
+      headers: {},
+      error: 'RESOURCE_EXHAUSTED: Quota exhausted. resets in 147h22m10s',
+      errorDetails: 'RESOURCE_EXHAUSTED: Quota exhausted. resets in 147h22m10s',
+    };
+
+    const result = await processOutcome429(
+      fleet[0],
+      fleet[0].name,
+      'gemini',
+      'gemini-3.8-flash-tiered',
+      weeklyMentionOutcome,
+      485,
+      null,
+      fleet,
+      0,
+      2,
+      res,
+      state,
+    );
+
+    expect(result.continueNext).toBe(true);
+    expect(result.breakLoop).toBe(false);
+
+    const remainingCd = getAccountCooldownRemaining(fleet[0], 'gemini');
+    // Cooldown must be around 5h (<= 5h 15m), NOT 147h (530 000s)
+    expect(remainingCd).toBeGreaterThan(4 * 3600 * 1000);
+    expect(remainingCd).toBeLessThanOrEqual(5.25 * 3600 * 1000);
   });
 });

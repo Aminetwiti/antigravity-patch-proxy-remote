@@ -944,6 +944,24 @@ describe('Burst Rate Limit Governor & Constants', () => {
       expect(lastOutput.length).toBeLessThan(400);
     });
 
+    it('detectAndMitigateToolLoops does not append text part when last turn has functionResponse with non-string output', () => {
+      const contents = [
+        { role: 'model', parts: [{ functionCall: { name: 'fetch_data', args: { id: 1 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'fetch_data', response: { content: 'val1' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'fetch_data', args: { id: 1 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'fetch_data', response: { content: 'val2' } } }] },
+        { role: 'model', parts: [{ functionCall: { name: 'fetch_data', args: { id: 1 } } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'fetch_data', response: { content: 'val3' } } }] },
+      ];
+
+      const injected = detectAndMitigateToolLoops(contents);
+      expect(injected).toBe(true);
+      const lastTurn = contents[contents.length - 1] as any;
+      // Parts count must still be 1 (no text part pushed into functionResponse turn)
+      expect(lastTurn.parts).toHaveLength(1);
+      expect(lastTurn.parts[0].functionResponse.response.content).toContain('[System Guardrail');
+    });
+
     it('correctly identifies trial accounts and filters them out for Argon and Claude 5.5 in selectCandidateP2C', () => {
       const trialAcc = makeModel({
         accountEmail: 'student-trial@example.com',

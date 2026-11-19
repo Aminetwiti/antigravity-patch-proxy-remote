@@ -66,22 +66,6 @@ export async function attemptExternalCascade(
         `[Proxy] 🔀 [Account Cascade] Cascading to ${isAiStudio ? 'Google AI Studio' : fallbackModel.provider} [${fallbackModel.displayName || fallbackModel.name}]...`,
       );
 
-      if (process.env.AG_ENABLE_FALLBACK_NOTICE === '1' && fi === 0 && isStream && !res.writableEnded && !res.destroyed && !alreadyNotified) {
-        if (!res.headersSent) {
-          safeWriteHead(res, 200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          });
-        }
-        const notice = isAiStudio
-          ? `> 🔄 **Pool Cloud Code saturé** — Poursuite avec **Google AI Studio** (${fallbackModel.displayName || fallbackModel.name}).\n\n`
-          : `> 🌐 **Pool Google saturé** — Poursuite avec **${fallbackModel.displayName || fallbackModel.name}** (${fallbackModel.provider}).\n\n`;
-        writeSafeSseChunk(res, {
-          response: { candidates: [{ content: { parts: [{ text: notice }], role: 'model' }, index: 0 }] },
-        });
-      }
-
       try {
         let targetBody = actualGeminiBody;
         if (targetBody) {

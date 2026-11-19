@@ -1,4 +1,4 @@
-﻿import * as http from 'http';
+import * as http from 'http';
 import https from 'https';
 import * as path from 'path';
 import log from 'electron-log';
@@ -123,7 +123,7 @@ function safeExecuteGoogleCloudCodeWithPool(
   isSessionRemote: boolean,
   convId: string,
   sessId: string | null,
-  attemptedModels?: string[],
+  attemptedModels?: Set<string>,
   fallbackDepth?: number,
 ): Promise<boolean> {
   const fn = typeof executeGoogleCloudCodeWithPool === 'function'
@@ -1027,7 +1027,9 @@ export function handleCustomModelRequest(
           );
           chainModels.push(...matches);
         }
-        const rest = allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m) && !m.name?.includes(':auto-pool') && m.apiKey !== 'auto');
+        const rest = !hasExplicitChain && process.env.AG_ENABLE_CROSS_MODEL_FALLBACK === '1'
+          ? allModels.filter((m) => !poolSiblings.includes(m) && !chainModels.includes(m) && !m.name?.includes(':auto-pool') && m.apiKey !== 'auto')
+          : [];
         // When server is overloaded with 503 or hit by fleet-wide IP edge 429, prioritize fallback models over same-model siblings to avoid retry storms
         orderedModels = (isServerOverload || isFleetRateLimit) && chainModels.length > 0
           ? [...chainModels, ...poolSiblings, ...rest]
@@ -1059,6 +1061,10 @@ export function handleCustomModelRequest(
             continue;
           }
           const mFamily = (m.externalModelName || m.name || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+          const hasTools = Boolean(geminiBody.tools && Array.isArray(geminiBody.tools) && geminiBody.tools.length > 0);
+          if (hasTools && m.provider === 'openai' && (model.provider === 'google' || model.provider === 'google-gemini')) {
+            continue;
+          }
           const isTargetFleetInCooldown =
             getFleetModelCooldown(m.name).active ||
             (m.externalModelName ? getFleetModelCooldown(normalizeCloudCodeModelId(m.externalModelName)).active : false) ||
@@ -1133,7 +1139,7 @@ export function handleCustomModelRequest(
               method: 'POST',
               headers: {},
             } as unknown as http.IncomingMessage;
-            safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId, [model.name, m.name], fallbackDepth + 1);
+            safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId, new Set([model.name, m.name]), fallbackDepth + 1);
             return true;
           }
 

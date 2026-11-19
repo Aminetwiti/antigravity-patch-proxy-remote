@@ -99,7 +99,7 @@ export async function attemptCrossModelFallback(
         : `Upstream failure (HTTP ${lastStatus || 500})`;
     log.warn(`[Proxy] 🔀 [Model Fallback] ${reasonText} for [${currentBase}]. Switching to fallback: [${fallbackModel}]...`);
     const selectedFallback = selectBestModelByQuota(fallbackCandidates, allCustomModels, fbFamily) || fallbackCandidates[0];
-    const fallbackPool = getGoogleAccountPool(selectedFallback, allCustomModels);
+    const fallbackPool = fallbackCandidates.length > 0 ? fallbackCandidates : getGoogleAccountPool(selectedFallback, allCustomModels);
 
     reqJson.model = fallbackModel;
     if (reqJson.request && typeof reqJson.request === 'object') {
