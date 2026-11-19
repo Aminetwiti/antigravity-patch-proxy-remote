@@ -530,15 +530,32 @@ export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
       const fr = (lastPart.functionResponse || lastPart.function_response) as Record<string, unknown> | undefined;
       if (fr && typeof fr === 'object') {
         const resp = fr.response as Record<string, any> | undefined;
-        if (resp && typeof resp === 'object' && typeof resp.output === 'string') {
-          if (isSevereLoop && resp.output.length > 300) {
+        if (resp && typeof resp === 'object') {
+          if (typeof resp.output === 'string') {
+            if (isSevereLoop && resp.output.length > 300) {
+              resp.output = antiLoopNote;
+              return true;
+            }
+            if (!resp.output.includes('[System Guardrail')) {
+              resp.output += antiLoopNote;
+              return true;
+            }
+          } else if (typeof resp.content === 'string') {
+            if (isSevereLoop && resp.content.length > 300) {
+              resp.content = antiLoopNote;
+              return true;
+            }
+            if (!resp.content.includes('[System Guardrail')) {
+              resp.content += antiLoopNote;
+              return true;
+            }
+          } else {
             resp.output = antiLoopNote;
             return true;
           }
-          if (!resp.output.includes('[System Guardrail')) {
-            resp.output += antiLoopNote;
-            return true;
-          }
+        } else {
+          fr.response = { output: antiLoopNote };
+          return true;
         }
       } else if (typeof lastPart.text === 'string') {
         if (isSevereLoop && lastPart.text.length > 300) {
@@ -550,8 +567,13 @@ export function detectAndMitigateToolLoops(contents: unknown[]): boolean {
           return true;
         }
       } else {
-        lastTurn.parts.push({ text: antiLoopNote });
-        return true;
+        const hasFunctionParts = lastTurn.parts.some(
+          (p: any) => p && typeof p === 'object' && (p.functionResponse || p.function_response || p.functionCall || p.function_call),
+        );
+        if (!hasFunctionParts) {
+          lastTurn.parts.push({ text: antiLoopNote });
+          return true;
+        }
       }
     }
   }

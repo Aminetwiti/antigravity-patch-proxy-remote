@@ -217,19 +217,7 @@ function getAccountEffectiveQuotas(acc: any): EffectiveQuotas {
 
   // Explicit direct fields take priority over legacy group bucket parsing if defined
   let gemini5hPct = (typeof q.geminiFiveHourPct === 'number' ? q.geminiFiveHourPct : foundGemini5h) ?? q.fiveHourPercentage ?? (acc.status === 'unhealthy' ? 0 : 100);
-  // Real quota alignment: Google Cloud Code only manages a dynamic 5h rolling limit for Gemini (no dynamic first-party weekly bucket).
-  // Any static 100% on weekly while 5h has dropped is the legacy hardcoded default and must be aligned with real 5h quota.
-  let geminiWkPct: number;
-  if (foundGeminiWk !== undefined && foundGeminiWk < 100) {
-    geminiWkPct = foundGeminiWk;
-  } else if (typeof q.geminiWeeklyPct === 'number' && q.geminiWeeklyPct < 100) {
-    geminiWkPct = q.geminiWeeklyPct;
-  } else if (typeof q.weeklyPercentage === 'number' && q.weeklyPercentage < 100) {
-    geminiWkPct = q.weeklyPercentage;
-  } else {
-    // If weekly is 100 (hardcoded/unconsumed default) or missing, align with the real dynamic 5h quota
-    geminiWkPct = acc.status === 'unhealthy' ? 0 : gemini5hPct;
-  }
+  let geminiWkPct = (typeof q.geminiWeeklyPct === 'number' ? q.geminiWeeklyPct : foundGeminiWk) ?? q.weeklyPercentage ?? (acc.status === 'unhealthy' ? 0 : 100);
   let claudeWkPct = (typeof q.claudeWeeklyPct === 'number' ? q.claudeWeeklyPct : foundClaudeWk) ?? (q.groups && foundClaudeWk === undefined && typeof q.claudeWeeklyPct !== 'number' ? 0 : (acc.status === 'unhealthy' ? 0 : 100));
   let claude5hPct = (typeof q.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : foundClaude5h) ?? (acc.status === 'unhealthy' ? 0 : 100);
   let argonWkPct = (typeof q.argonWeeklyPct === 'number' ? q.argonWeeklyPct : foundArgonWk);
@@ -254,9 +242,8 @@ function getAccountEffectiveQuotas(acc: any): EffectiveQuotas {
   }
 
   const rawGemini5hReset = foundGemini5hReset || q.geminiFiveHourReset || q.fiveHourResetTime || q.geminiResetTime;
-  const rawGeminiWkReset = (foundGeminiWk !== undefined && foundGeminiWk < 100 && foundGeminiWkReset)
-    || (typeof q.geminiWeeklyPct === 'number' && q.geminiWeeklyPct < 100 && q.geminiWeeklyReset)
-    || (q.geminiWeeklyReset && q.geminiWeeklyReset !== rawGemini5hReset ? q.geminiWeeklyReset : undefined)
+  const rawGeminiWkReset = foundGeminiWkReset
+    || q.geminiWeeklyReset
     || q.weeklyResetTime
     || rawGemini5hReset;
   const rawClaude5hReset = foundClaude5hReset || q.claudeFiveHourReset || rawGemini5hReset;

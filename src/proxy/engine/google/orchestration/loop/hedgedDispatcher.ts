@@ -20,6 +20,7 @@ import {
   resolveGoogleProjectId,
 } from '../../../../resilience/googlePool';
 import { recordSuccess } from '../../../../resilience/circuitBreaker';
+import { getFleetModelCooldown } from '../../../../resilience/google/cooldown/cooldownRegistry';
 import { GOOGLE_HOSTS, HEDGED_REQUEST_DELAY_MS, FLASH_HEDGED_DELAY_MS } from '../../../../../constants';
 
 export interface HedgedDispatchParams {
@@ -104,6 +105,14 @@ export async function dispatchWithHedge(
       hedgeLaunched = true;
       if (claimer.isClaimed() || res.headersSent || res.writableEnded) {
         resolveHedge({ success: false, statusCode: 499, error: 'Hedge aborted: already claimed or response finished' });
+        return;
+      }
+
+      if (
+        getFleetModelCooldown(targetModel).active ||
+        (modelFamily && getFleetModelCooldown(modelFamily).active)
+      ) {
+        resolveHedge({ success: false, statusCode: 429, error: 'Hedge skipped: fleet cooldown active' });
         return;
       }
 

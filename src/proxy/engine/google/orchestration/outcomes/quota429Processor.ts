@@ -88,16 +88,26 @@ export async function processOutcome429(
     const nowMs = Date.now();
     const remainingUntilReset = existingResetTs > nowMs ? existingResetTs - nowMs : 0;
 
-    const effectiveCooldown =
-      decision.weeklyResetMs ||
-      (decision.cooldownMs > 5 * 60_000
+    // Check if the weekly quota itself is genuinely exhausted (i.e. weeklyPct is 0 or error explicitly mentions weekly quota exhausted)
+    const isWeeklyExhausted = Boolean(
+      (modelFamily === 'claude'
+        ? (existingLive?.claudeWeeklyPct !== undefined && existingLive.claudeWeeklyPct <= 0)
+        : (existingLive?.geminiWeeklyPct !== undefined && existingLive.geminiWeeklyPct <= 0)) ||
+      /weekly.*(quota|limit).*exhausted|all.*weekly.*quota/i.test(outcome.error || '')
+    );
+
+    const effectiveCooldown = isWeeklyExhausted && decision.weeklyResetMs
+      ? decision.weeklyResetMs
+      : (decision.cooldownMs > 5 * 60_000
         ? decision.cooldownMs
         : remainingUntilReset > 5 * 60_000
         ? remainingUntilReset
         : 5 * 3600_000);
 
     decision.cooldownMs = effectiveCooldown;
-    decision.reason = decision.reason || `Quota exhausted — ${Math.round(effectiveCooldown / 3600_000)}h cooldown`;
+    decision.reason = decision.weeklyResetMs && !isWeeklyExhausted
+      ? `Quota exhausted (weekly reset in ${Math.round(decision.weeklyResetMs / 3600_000)}h) — ${Math.round(effectiveCooldown / 3600_000)}h cooldown and switch account`
+      : `Quota exhausted — ${Math.round(effectiveCooldown / 3600_000)}h cooldown`;
   } else {
     const burstCount = recordAccountBurst(candidate);
     let burstCooldownMs = 10_000;
@@ -135,7 +145,12 @@ export async function processOutcome429(
 
     const existingQuota = getLiveAccountQuota(liveKey);
     const rawWeekly = decision.weeklyResetMs || ((decision.rawRetryAfterMs ?? 0) > 24 * 3600 * 1000 ? decision.rawRetryAfterMs! : null);
-    const isWeekly = decision.cooldownMs > 24 * 3600 * 1000 || rawWeekly !== null;
+    const isWeekly = Boolean(
+      (modelFamily === 'claude'
+        ? (existingQuota?.claudeWeeklyPct !== undefined && existingQuota.claudeWeeklyPct <= 0)
+        : (existingQuota?.geminiWeeklyPct !== undefined && existingQuota.geminiWeeklyPct <= 0)) ||
+      /weekly.*(quota|limit).*exhausted|all.*weekly.*quota/i.test(outcome.error || '')
+    );
     const nowMs = Date.now();
     const weeklyDuration = rawWeekly || decision.cooldownMs;
     const existingResetIso = modelFamily === 'claude'
@@ -144,6 +159,8 @@ export async function processOutcome429(
     const existingResetTs = existingResetIso ? Date.parse(existingResetIso) : 0;
     const cooldownDuration = isWeekly ? weeklyDuration : decision.cooldownMs > 0 ? decision.cooldownMs : 5 * 3600_000;
     const resetIso = existingResetTs > nowMs + 5 * 60_000 && !isWeekly ? existingResetIso! : new Date(nowMs + cooldownDuration).toISOString();
+    const weeklyResetIso = rawWeekly ? new Date(nowMs + rawWeekly).toISOString() : existingQuota?.geminiWeeklyReset;
+    const weeklyResetIsoClaude = rawWeekly ? new Date(nowMs + rawWeekly).toISOString() : existingQuota?.claudeWeeklyReset;
 
     if (isWeekly) setAccountCooldown(candidate, Math.min(weeklyDuration, 7 * 24 * 3600 * 1000), modelFamily);
 
@@ -157,13 +174,13 @@ export async function processOutcome429(
       updatedQ.geminiFiveHourPct = 0;
       updatedQ.geminiWeeklyPct = isWeekly ? 0 : existingQuota?.geminiWeeklyPct ?? 100;
       updatedQ.geminiFiveHourReset = resetIso;
-      updatedQ.geminiWeeklyReset = isWeekly ? resetIso : existingQuota?.geminiWeeklyReset;
+      updatedQ.geminiWeeklyReset = isWeekly ? resetIso : weeklyResetIso;
       updatedQ.geminiResetTime = resetIso;
     } else {
       updatedQ.claudeFiveHourPct = 0;
       updatedQ.claudeWeeklyPct = isWeekly ? 0 : existingQuota?.claudeWeeklyPct ?? 100;
       updatedQ.claudeFiveHourReset = resetIso;
-      updatedQ.claudeWeeklyReset = isWeekly ? resetIso : existingQuota?.claudeWeeklyReset;
+      updatedQ.claudeWeeklyReset = isWeekly ? resetIso : weeklyResetIsoClaude;
       updatedQ.claudeResetTime = resetIso;
     }
     updateLiveAccountQuota(liveKey, updatedQ as AccountLiveQuota);

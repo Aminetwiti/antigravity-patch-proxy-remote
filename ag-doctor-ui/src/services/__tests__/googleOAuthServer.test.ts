@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../discovery/ideAccountDiscovery', () => ({
-  fetchGoogleUserInfo: vi.fn().mockResolvedValue({ email: 'test@example.com', name: 'Test User' }),
+  fetchGoogleUserInfo: vi.fn().mockResolvedValue({ email: 'google-user@gmail.com', name: 'Google User' }),
   ensureCloudCodeProject: vi.fn().mockResolvedValue({ projectId: 'test-proj', tierId: 'PRO' }),
   fetchGoogleAccountQuotas: vi.fn().mockResolvedValue({ fiveHourPercentage: 100 }),
 }));
@@ -25,19 +25,24 @@ import { startGoogleOAuthLogin, writeAdcCredentialsFile } from '../runtime/googl
 
 describe('googleOAuthServer', () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('writeAdcCredentialsFile', () => {
     it('creates standard Application Default Credentials JSON file', () => {
       const tmpGcloud = fs.mkdtempSync(path.join(os.tmpdir(), 'adc-test-'));
       const origAppData = process.env.APPDATA;
+      const origHome = process.env.HOME;
       process.env.APPDATA = tmpGcloud;
+      process.env.HOME = tmpGcloud;
 
       try {
         writeAdcCredentialsFile('user@example.com', '1//mock_refresh_token', 'mock_client_id', 'mock_client_secret');
 
-        const adcPath = path.join(tmpGcloud, 'gcloud', 'application_default_credentials.json');
+        const isWin = process.platform === 'win32';
+        const adcPath = isWin
+          ? path.join(tmpGcloud, 'gcloud', 'application_default_credentials.json')
+          : path.join(tmpGcloud, '.config', 'gcloud', 'application_default_credentials.json');
         expect(fs.existsSync(adcPath)).toBe(true);
 
         const data = JSON.parse(fs.readFileSync(adcPath, 'utf8'));
@@ -47,6 +52,7 @@ describe('googleOAuthServer', () => {
         expect(data.type).toBe('authorized_user');
       } finally {
         process.env.APPDATA = origAppData;
+        process.env.HOME = origHome;
         try { fs.rmSync(tmpGcloud, { recursive: true, force: true }); } catch {}
       }
     });
@@ -88,7 +94,8 @@ describe('googleOAuthServer', () => {
 
       const { shell } = await import('electron');
       expect(shell.openExternal).toHaveBeenCalled();
-      const authUrl = (shell.openExternal as any).mock.calls[0][0];
+      const calls = (shell.openExternal as any).mock.calls;
+      const authUrl = calls[calls.length - 1][0];
       const parsedUrl = new URL(authUrl);
       const stateToken = parsedUrl.searchParams.get('state')!;
       const redirectUri = parsedUrl.searchParams.get('redirect_uri')!;
@@ -131,7 +138,8 @@ describe('googleOAuthServer', () => {
       await new Promise((r) => setTimeout(r, 60));
 
       const { shell } = await import('electron');
-      const authUrl = (shell.openExternal as any).mock.calls[(shell.openExternal as any).mock.calls.length - 1][0];
+      const calls = (shell.openExternal as any).mock.calls;
+      const authUrl = calls[calls.length - 1][0];
       const parsedUrl = new URL(authUrl);
       const stateToken = parsedUrl.searchParams.get('state')!;
       const redirectUri = parsedUrl.searchParams.get('redirect_uri')!;

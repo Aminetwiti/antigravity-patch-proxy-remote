@@ -530,18 +530,7 @@ function getAccountEffectiveQuotas(acc: any): {
 
   // Explicit direct fields take priority over legacy group bucket parsing if defined
   let gemini5hPct = (typeof q.geminiFiveHourPct === 'number' ? q.geminiFiveHourPct : foundGemini5h) ?? q.fiveHourPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
-  // Real quota alignment: Google Cloud Code only manages a dynamic 5h rolling limit for Gemini (no dynamic first-party weekly bucket).
-  // Any weekly value at 100% while 5h < 100 is a hardcoded legacy default — align with real 5h.
-  let geminiWkPct: number;
-  if (foundGeminiWk !== undefined && foundGeminiWk < 100) {
-    geminiWkPct = foundGeminiWk;
-  } else if (typeof q.geminiWeeklyPct === 'number' && q.geminiWeeklyPct < 100) {
-    geminiWkPct = q.geminiWeeklyPct;
-  } else if (typeof q.weeklyPercentage === 'number' && q.weeklyPercentage < 100) {
-    geminiWkPct = q.weeklyPercentage;
-  } else {
-    geminiWkPct = acc?.status === 'unhealthy' ? 0 : gemini5hPct;
-  }
+  let geminiWkPct = (typeof q.geminiWeeklyPct === 'number' ? q.geminiWeeklyPct : foundGeminiWk) ?? q.weeklyPercentage ?? (acc?.status === 'unhealthy' ? 0 : 100);
   let claudeWkPct = (typeof q.claudeWeeklyPct === 'number' ? q.claudeWeeklyPct : foundClaudeWk) ?? (q.groups && foundClaudeWk === undefined && typeof q.claudeWeeklyPct !== 'number' ? 0 : (acc?.status === 'unhealthy' ? 0 : 100));
   let claude5hPct = (typeof q.claudeFiveHourPct === 'number' ? q.claudeFiveHourPct : foundClaude5h) ?? (acc?.status === 'unhealthy' ? 0 : 100);
   let argonWkPct = (typeof q.argonWeeklyPct === 'number' ? q.argonWeeklyPct : foundArgonWk);

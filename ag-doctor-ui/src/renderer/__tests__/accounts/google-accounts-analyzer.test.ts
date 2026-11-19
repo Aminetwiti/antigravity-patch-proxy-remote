@@ -93,7 +93,7 @@ describe('SOLID Architecture — Google Accounts Pure Analyzer (SRP)', () => {
       expect(eff.claudeWkPct).toBe(60);
     });
 
-    it('aligns gemini weekly with real 5h quota when weekly is omitted or defaults to 100 while 5h is lower', () => {
+    it('defaults gemini weekly to 100 when weekly is omitted', () => {
       const acc = {
         quotas: {
           geminiFiveHourPct: 52,
@@ -105,16 +105,13 @@ describe('SOLID Architecture — Google Accounts Pure Analyzer (SRP)', () => {
       };
       const eff = getAccountEffectiveQuotas(acc);
       expect(eff.gemini5hPct).toBe(52);
-      expect(eff.geminiWkPct).toBe(52);
-      expect(eff.geminiWkReset).toBe('2026-11-18T16:40:00Z');
+      expect(eff.geminiWkPct).toBe(100);
       expect(eff.claude5hPct).toBe(0);
       expect(eff.claudeWkPct).toBe(77);
       expect(eff.claudeWkReset).toBe('2026-11-20T13:00:00Z');
     });
 
-    it('overrides static gemini-weekly bucket at 100% in groups with real 5h quota (REV-001 regression)', () => {
-      // Exact structure from quota_cache.json / custom_models.json: bucket gemini-weekly exists at 100%
-      // while geminiFiveHourPct has dropped to 52%. Weekly must NOT stay stuck at 100%.
+    it('preserves gemini weekly percentage independently of 5h quota', () => {
       const acc = {
         quotas: {
           geminiFiveHourPct: 52,
@@ -142,9 +139,9 @@ describe('SOLID Architecture — Google Accounts Pure Analyzer (SRP)', () => {
         },
       };
       const eff = getAccountEffectiveQuotas(acc);
-      // Weekly must reflect the real 5h quota, NOT the static 100% from the bucket
+      // Weekly remains independent (100%), not clamped to 5h quota
       expect(eff.gemini5hPct).toBe(52);
-      expect(eff.geminiWkPct).toBe(52);
+      expect(eff.geminiWkPct).toBe(100);
       expect(eff.claude5hPct).toBe(0);
       expect(eff.claudeWkPct).toBe(77);
     });

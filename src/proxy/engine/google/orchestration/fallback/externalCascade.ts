@@ -34,7 +34,7 @@ export async function attemptExternalCascade(
   isClaudeRequest: boolean,
   isPreconditionLocationError: boolean,
 ): Promise<boolean> {
-  const { req, res, reqJson, convId, sessId } = params;
+  const { req, res, reqJson, convId, sessId, fallbackDepth } = params;
   const isStream = req.url!.includes('streamGenerateContent') || req.url!.includes('alt=sse');
 
   const nonGoogleFallbacks = allCustomModels.filter(
@@ -84,7 +84,7 @@ export async function attemptExternalCascade(
 
       try {
         let targetBody = actualGeminiBody;
-        if (isAiStudio && targetBody) {
+        if (targetBody) {
           try {
             const cloned = JSON.parse(JSON.stringify(targetBody));
             if (cloned.generationConfig) {
@@ -103,7 +103,7 @@ export async function attemptExternalCascade(
           } catch (_) {}
         }
         const handler = getCustomModelHandler();
-        handler(res, fallbackModel, targetBody, isStream);
+        handler(res, fallbackModel, targetBody, isStream, 0, (fallbackDepth ?? 0) + 1);
         if (sessionKey && fi === 0) {
           setSessionModelFallback(sessionKey, currentBase, fallbackModel.displayName || fallbackModel.name, true);
         }

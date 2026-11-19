@@ -18,6 +18,7 @@ import { recordProviderUsage } from '../../../compat/customModelStore';
 import { classifyError, ErrorDiagnostic, type ErrorType } from '../../resilience/retry/errorClassifier';
 import { shouldRetryStatus, computeRetryDelay, type RetryStrategy } from '../../resilience/retry/retryStrategy';
 import { getOpenBreaker, recordFailure, recordSuccess } from '../../resilience/circuit/circuitBreaker';
+import { getFleetModelCooldown } from '../../resilience/google/cooldown/cooldownRegistry';
 import { IdleTimeoutGuard } from '../../resilience/circuit/idleTimeout';
 import { resolveClientForUrl } from '../../resilience/pools/agentPool';
 import { EmptyStreamGuard } from '../stream/emptyStream';
@@ -122,11 +123,13 @@ function safeExecuteGoogleCloudCodeWithPool(
   isSessionRemote: boolean,
   convId: string,
   sessId: string | null,
+  attemptedModels?: string[],
+  fallbackDepth?: number,
 ): Promise<boolean> {
   const fn = typeof executeGoogleCloudCodeWithPool === 'function'
     ? executeGoogleCloudCodeWithPool
     : (require('../google/orchestration/loop/poolOrchestrator') as typeof import('../google/orchestration/loop/poolOrchestrator')).executeGoogleCloudCodeWithPool;
-  return fn(req, res, reqJson, accountPool, isSessionRemote, convId, sessId);
+  return fn(req, res, reqJson, accountPool, isSessionRemote, convId, sessId, attemptedModels, fallbackDepth);
 }
 
 interface StreamRequestCtx {
@@ -887,7 +890,7 @@ export function handleCustomModelRequest(
         method: 'POST',
         headers: {},
       } as unknown as http.IncomingMessage;
-      void safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', null);
+      void safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', null, undefined, fallbackDepth);
       return;
     }
     log.error(`[Proxy] Cannot route virtual auto-pool or keyless model ${model.name} to translator without valid API key.`);
@@ -1056,10 +1059,15 @@ export function handleCustomModelRequest(
             continue;
           }
           const mFamily = (m.externalModelName || m.name || '').toLowerCase().includes('claude') ? 'claude' : 'gemini';
+          const isTargetFleetInCooldown =
+            getFleetModelCooldown(m.name).active ||
+            (m.externalModelName ? getFleetModelCooldown(normalizeCloudCodeModelId(m.externalModelName)).active : false) ||
+            (mFamily !== 'gemini' ? getFleetModelCooldown(mFamily).active : false);
           if (
+            isTargetFleetInCooldown ||
             isAccountInCooldown(m, mFamily) ||
             getOpenBreaker(m) ||
-            (isGoogleCloudCodeModel(m) && getModelQuotaScore(m, mFamily) <= 0) ||
+            (isGoogleCloudCodeModel(m) && (fallbackDepth > 0 || getModelQuotaScore(m, mFamily) <= 0)) ||
             isProviderRateLimited(m.apiUrl)
           ) {
             continue;
@@ -1125,7 +1133,7 @@ export function handleCustomModelRequest(
               method: 'POST',
               headers: {},
             } as unknown as http.IncomingMessage;
-            safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId);
+            safeExecuteGoogleCloudCodeWithPool(fakeReq, res, cloudCodePayload, accountPool, false, '', sessId, [model.name, m.name], fallbackDepth + 1);
             return true;
           }
 

@@ -164,9 +164,9 @@ export function registerStatsTokensIpc(ctx: MainContext): void {
               if (!acc || acc.enabled === false) continue;
               const q = acc.quotas || {};
               const pct5h = q.geminiFiveHourPct ?? q.fiveHourPercentage ?? 100;
-              const wkPct = (typeof q.geminiWeeklyPct === 'number' && (q.geminiWeeklyPct < 100 || pct5h === 100))
+              const wkPct = typeof q.geminiWeeklyPct === 'number'
                 ? q.geminiWeeklyPct
-                : (typeof q.weeklyPercentage === 'number' && (q.weeklyPercentage < 100 || pct5h === 100) ? q.weeklyPercentage : pct5h);
+                : (typeof q.weeklyPercentage === 'number' ? q.weeklyPercentage : 100);
               poolConsumed5h += Math.round((GEMINI_5H * Math.max(0, 100 - pct5h)) / 100);
               poolAvailable5h += Math.round((GEMINI_5H * Math.max(0, Math.min(100, pct5h))) / 100);
               poolConsumedWeekly += Math.round((GEMINI_WK * Math.max(0, 100 - wkPct)) / 100);

@@ -161,10 +161,7 @@ export function registerProvidersIpc(ctx: MainContext): void {
               acc.quotas.geminiFiveHourPct = cacheEntry.geminiFiveHourPct;
             }
             if (cacheEntry && typeof cacheEntry.geminiWeeklyPct === 'number' && (isCacheFreshEnough || typeof acc.quotas.geminiWeeklyPct !== 'number')) {
-              const eff5h = typeof cacheEntry.geminiFiveHourPct === 'number' ? cacheEntry.geminiFiveHourPct : acc.quotas.geminiFiveHourPct;
-              acc.quotas.geminiWeeklyPct = (cacheEntry.geminiWeeklyPct < 100 || eff5h === 100 || eff5h === undefined)
-                ? cacheEntry.geminiWeeklyPct
-                : eff5h;
+              acc.quotas.geminiWeeklyPct = cacheEntry.geminiWeeklyPct;
             }
             if (cacheEntry && typeof cacheEntry.fiveHourPercentage === 'number' && (isCacheFreshEnough || typeof acc.quotas.fiveHourPercentage !== 'number')) {
               acc.quotas.fiveHourPercentage = cacheEntry.fiveHourPercentage;
